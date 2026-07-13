@@ -46,7 +46,7 @@ node src/cli.ts .
 ## 测试
 
 ```powershell
-node --test tests/slash-command.test.ts tests/model-config.test.ts
+node tests\run.ts
 ```
 
 ## 路线图
@@ -58,3 +58,9 @@ node --test tests/slash-command.test.ts tests/model-config.test.ts
 5. `v0.5`：Git Diff、任务历史和模型配置管理。
 
 详细架构见 [docs/architecture.md](docs/architecture.md)，协作方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 项目总纲
+
+完整的产品架构、开发路线、CLI 操作、模块接入方式和 Git 协作规范见：
+
+- [CodeMuse 项目总纲与开发操作指南](docs/project-guide.md)

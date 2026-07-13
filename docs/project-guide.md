@@ -1,6 +1,6 @@
 # CodeMuse 项目总纲与开发操作指南
 
-> 当前实施版本：v0.2.0 只读代码库分析 Agent。具体变化见 [releases/v0.2.0.md](releases/v0.2.0.md)。
+> 当前实施版本：v0.3.0 任务规划与智能上下文管理。具体变化见 [releases/v0.3.0.md](releases/v0.3.0.md)。
 
 ## 1. 项目定位
 
@@ -150,7 +150,7 @@ CodeMuse/
 └─ tsconfig.json
 ```
 
-不要为了表面整齐一次创建所有空目录。每个功能分支只增加真正需要的模块和测试。
+不要为了表面整齐一次创建所有空目录。每次迭代只增加真正需要的模块和测试。
 
 ## 5. 核心接口
 
@@ -196,28 +196,33 @@ interface AgentTool<TInput, TOutput> {
 
 模型输出必须先经过工具查找、参数校验和权限判断，才能执行。
 
-## 6. 当前 v0.1 完成情况
+## 6. 当前版本完成情况
 
-首次提交 `7545648 feat: initialize CodeMuse CLI` 已建立以下基线：
+### 6.1 v0.1.0 CLI 与模型基线
 
-- 可持续输入的终端 REPL。
-- 标题、工作区、模型和运行模式显示。
-- `/help`、`/model`、`/workspace`、`/clear`、`/cancel`、`/exit`。
-- `AgentRunner` 和 `AgentEvent` 基础接口。
-- 任务步骤和流式文本事件展示。
-- MockAgent，用于无 API Key 时验证 CLI 和取消流程。
-- ModelAgent，用于真实模型流式问答。
-- DeepSeek、GLM 和自定义兼容接口配置。
+- 持续输入的终端 REPL、流式输出、取消和斜杠命令。
+- MockAgent、ModelAgent、DeepSeek、GLM 和自定义兼容模型配置。
 - API Key 缺失时自动进入 Mock 模式。
-- `.env`、构建目录和本地会话目录的 Git 忽略规则。
-- 模型配置和斜杠命令共 5 项单元测试。
-- README、简要架构、协作规范和 MIT License。
 
-### 6.1 当前能力边界
+### 6.2 v0.2.0 只读代码库分析
 
-v0.1 的真实模型只有终端问答能力，尚未接入文件和 Shell 工具。因此它是编程 Agent 的基础骨架，还不是最终完整 Agent，也不能声称已经读取或修改本地项目。
+- 工作区安全边界、真实路径和敏感文件保护。
+- `list_files`、`read_file`、`search_code`。
+- `LLM -> Tool Call -> Tool Result -> LLM` Agent Loop。
+- Mock 模式真实执行本地只读工具。
 
-MockAgent 只用于无 Key 开发、界面并行开发、稳定复现取消与错误，以及无模型费用的自动测试。正常产品模式会调用用户选定的真实模型。
+### 6.3 v0.3.0 规划与上下文
+
+- 项目类型、语言、框架、包管理器和关键文件识别。
+- 四步任务计划及状态记录。
+- 任务相关文件评分和代码片段选择。
+- 默认 6000 Tokens 的可配置上下文预算。
+- `/plan`、`/context` 和 `/scan`。
+- 共 18 项自动测试及 TypeScript 类型检查。
+
+### 6.4 当前能力边界
+
+v0.3.0 是具备任务规划和智能上下文的只读 Agent。它可以真实扫描、读取和搜索项目，但不能修改文件、执行 Shell、运行测试或执行 Git 写操作。MockAgent 用于无 Key 开发和验收，不会伪装成真实模型推理。
 
 ## 7. CLI 操作指南
 
@@ -231,9 +236,7 @@ where.exe node
 
 当前要求 Node.js 22.18 或更高版本。
 
-### 7.2 启动 CodeMuse
-
-首次使用先在源码目录注册全局命令：
+### 7.2 首次安装和全局注册
 
 ```powershell
 cd "C:\Users\Administrator\Documents\Codex\2026-07-13\u-an\CodeMuse"
@@ -254,19 +257,7 @@ codemuse .
 codemuse "D:\projects\my-app"
 ```
 
-不注册全局命令时，可以直接从源码启动：
-
-```powershell
-cd "C:\Users\Administrator\Documents\Codex\2026-07-13\u-an\CodeMuse"
-node src\cli.ts .
-```
-
-无 API Key 时显示：
-
-```text
-Model  Mock (本地演示)
-Mode   mock
-```
+无 API Key 时进入 Mock 模式，但扫描、读取、上下文选择和 Token 估算仍是真实本地操作。
 
 ### 7.3 CodeMuse 内部命令
 
@@ -274,86 +265,89 @@ Mode   mock
 /help       查看命令
 /model      查看当前模型
 /workspace  查看当前工作区
-/clear      清空显示
+/plan       查看最近一次任务计划
+/context    查看最近一次上下文选择
+/scan       重新扫描当前项目
+/clear      清空终端和当前任务状态
 /cancel     取消当前任务
 /exit       退出 CodeMuse
 ```
 
-`node tests\run.ts` 是 PowerShell 命令，必须先输入 `/exit` 退出 CodeMuse，再在 `PS ...>` 提示符中执行，不能输入到 `codemuse>` 中。
+`npm test` 是 PowerShell 命令，必须先输入 `/exit` 退出 CodeMuse，不能输入到 `codemuse>` 中。
 
 ### 7.4 运行测试
 
 ```powershell
-node tests\run.ts
+npm test
+npm run typecheck
 ```
 
-### 7.5 使用 DeepSeek
+### 7.5 调整上下文预算
+
+```powershell
+$env:CODEMUSE_CONTEXT_TOKENS="8000"
+codemuse .
+```
+
+默认值为 6000，允许范围为 500 到 100000。
+
+### 7.6 使用 DeepSeek
 
 ```powershell
 $env:CODEMUSE_PROVIDER="deepseek"
 $env:CODEMUSE_API_KEY="你的 API Key"
 $env:CODEMUSE_BASE_URL="https://api.deepseek.com"
 $env:CODEMUSE_MODEL="deepseek-chat"
-node src\cli.ts .
+codemuse .
 ```
 
-### 7.6 使用 GLM
+### 7.7 使用 GLM
 
 ```powershell
 $env:CODEMUSE_PROVIDER="glm"
 $env:CODEMUSE_API_KEY="你的 API Key"
 $env:CODEMUSE_BASE_URL="https://open.bigmodel.cn/api/paas/v4"
 $env:CODEMUSE_MODEL="以平台当前可用模型为准"
-node src\cli.ts .
+codemuse .
 ```
 
 真实 API Key 不得写入代码、README、Issue、截图或 Git 提交。
 
 ## 8. 后续功能如何结合现有代码
 
-### 8.1 只读代码分析
+### 8.1 已完成的只读分析链路
 
-分支：`feat/read-only-tools`。
+v0.1.0 到 v0.3.0 已完成：
 
-新增 `context/workspace.ts`、`tools/registry.ts`、`tools/filesystem/list-files.ts`、`tools/filesystem/read-file.ts` 和 `tools/search/search-code.ts`。
+```text
+CLI 输入
+  -> TaskPlanner
+  -> ProjectScanner
+  -> ContextSelector + TokenBudget
+  -> ModelAgent
+  -> ToolRegistry
+  -> Workspace Guard
+  -> list_files / read_file / search_code
+  -> 模型最终回答
+```
 
-接入流程：CLI 传入工作区 -> Agent 将工具说明发给模型 -> 模型返回 Tool Call -> Registry 校验 -> Workspace Guard 检查路径 -> 工具执行 -> 结果返回 Agent -> 模型继续分析。
+CLI 只展示事件，不直接读取项目；模型只能通过精选上下文和受控工具获取代码。
 
-### 8.2 任务规划与 Agent Loop
+### 8.2 v0.4.0 代码修改与 Diff
 
-分支：`feat/agent-loop`。
+新增局部补丁、Diff 生成、写入授权和任务级撤销。流程为：读取文件 -> 校验原片段 -> 内存试应用 -> 展示 Diff -> 用户确认 -> 原子写入。禁止模型无条件覆盖整个文件。
 
-现有 `ModelAgent.run()` 逐步由 `agent-loop.ts` 承担。MockAgent 保留作为测试实现。Agent Loop 必须设置最大轮数、重复错误检测、用户取消和明确停止原因。
+### 8.3 v0.5.0 Shell、构建与测试
 
-### 8.3 项目上下文管理
+模型只能选择受控项目脚本，不能直接提供任意 Shell 字符串。执行必须包含固定工作目录、超时、输出上限、退出码、取消能力和危险模式拦截。
 
-分支：`feat/context-manager`。
+### 8.4 v0.6.0 自动错误修复
 
-先识别技术栈和关键配置，再根据任务搜索符号和文件，按需读取片段。默认忽略 `.git`、`node_modules`、构建目录、二进制文件和敏感配置。
+将测试退出码和关键错误作为 Tool Result 返回 Agent。Agent 再次搜索、修改和验证；达到最大轮数或重复相同错误时停止。
 
-### 8.4 代码修改与 Diff
+### 8.5 v0.7.0 会话恢复
 
-分支：`feat/patch-and-diff`。
-
-流程：读取文件 -> 校验原片段 -> 内存试应用 -> 生成 Diff -> 请求用户确认 -> 原子写入 -> 保存撤销信息。禁止模型无条件覆盖整个文件。
-
-### 8.5 Shell、构建与测试
-
-分支：`feat/shell-runner`。
-
-模型只能选择允许的项目脚本，不能直接提供任意 Shell 字符串。执行必须有固定工作目录、超时、输出上限、退出码、取消能力和危险模式拦截。
-
-### 8.6 自动错误修复
-
-分支：`feat/repair-loop`。
-
-将测试退出码和关键错误作为 Tool Result 返回 Agent。Agent 再次搜索、修改和验证。达到最大轮数或重复相同错误时停止，并如实说明未解决内容。
-
-### 8.7 会话恢复
-
-分支：`feat/session-store`。
-
-数据保存在工作区 `.codemuse/`，记录任务、计划、工具调用、Diff、测试结果和状态。该目录已在 `.gitignore` 中。后续增加 `/history` 和 `/resume`。
+数据保存在工作区 `.codemuse/`，记录任务、计划、工具调用、Diff、测试结果和状态。后续增加 `/history` 和 `/resume`。
 
 ## 9. 版本路线图
 
@@ -379,38 +373,37 @@ node src\cli.ts .
 
 公共接口需要全组评审：`AgentEvent`、`ModelProvider`、`AgentTool`、`ToolResult` 和 `ApprovalRequest`。
 
-## 11. Git 提交架构
+## 11. Git 提交方式
 
-采用 GitHub Flow，不额外维护长期 `develop` 分支：
+当前小组采用直接提交 `main` 的简单流程，不额外维护 `develop`、功能分支或 PR。
 
-```text
-main（始终可运行）
-  ↑ Pull Request + 另一名成员审核
-feat/read-only-tools
-feat/agent-loop
-feat/context-manager
-feat/patch-and-diff
-feat/shell-runner
-feat/repair-loop
-feat/session-store
-```
-
-每项任务：
+开始开发前：
 
 ```powershell
 git switch main
-git pull
-git switch -c feat/功能名
-
-# 开发并测试
-node tests\run.ts
-
-git add .
-git commit -m "feat: describe the feature"
-git push -u origin feat/功能名
+git pull origin main
+git status
 ```
 
-然后在 GitHub 创建 Pull Request。至少由另一名成员检查代码、测试和安全边界后再合入 `main`。
+完成开发后：
+
+```powershell
+npm test
+npm run typecheck
+git add .
+git status
+git commit -m "feat: describe the feature"
+git push origin main
+```
+
+每个正式版本还要创建标签：
+
+```powershell
+git tag -a v0.3.0 -m "CodeMuse v0.3.0"
+git push origin v0.3.0
+```
+
+四名成员开始修改前应在小组中说明负责文件，避免同时修改同一模块。推送前先同步远程；遇到冲突时解决冲突并重新运行测试。
 
 提交类型：
 
@@ -423,7 +416,7 @@ refactor: 不改变行为的重构
 chore: 配置和工具维护
 ```
 
-不要把多个独立功能塞进一次提交。每个 PR 应有明确目标、测试和验收说明。
+不得提交真实 API Key、`.env`、`node_modules` 或个人缓存。
 
 ## 12. MVP 最终验收场景
 

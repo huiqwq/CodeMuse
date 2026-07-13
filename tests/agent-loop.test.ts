@@ -65,6 +65,11 @@ test("Agent Loop 执行工具并把结果返回模型", async () => {
   assert.ok(events.some((event) => event.type === "message-delta"));
   assert.ok(events.some((event) => event.type === "complete"));
 
+  const firstRequest = provider.receivedMessages[0] ?? [];
+  const initialUserMessage = firstRequest.find((message) => message.role === "user");
+  assert.match(initialUserMessage?.content ?? "", /预选上下文/);
+  assert.match(initialUserMessage?.content ?? "", /src\/index\.ts/);
+
   const secondRequest = provider.receivedMessages[1] ?? [];
   assert.ok(secondRequest.some((message) => message.role === "tool"));
 });

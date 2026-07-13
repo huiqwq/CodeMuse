@@ -5,6 +5,50 @@ export type StepStatus =
   | "failed"
   | "cancelled";
 
+export type PlanStep = {
+  id: string;
+  title: string;
+  status: StepStatus;
+};
+
+export type TaskPlan = {
+  task: string;
+  steps: PlanStep[];
+};
+
+export type ProjectScan = {
+  projectName: string;
+  projectTypes: string[];
+  languages: string[];
+  frameworks: string[];
+  packageManager: string | null;
+  fileCount: number;
+  files: string[];
+  keyFiles: string[];
+  truncated: boolean;
+};
+
+export type ContextFileSummary = {
+  path: string;
+  score: number;
+  estimatedTokens: number;
+  truncated: boolean;
+};
+
+export type ContextSummary = {
+  budgetTokens: number;
+  estimatedTokens: number;
+  files: ContextFileSummary[];
+  omittedFiles: number;
+  truncated: boolean;
+};
+
+export type AgentSessionState = {
+  project: ProjectScan | null;
+  plan: TaskPlan | null;
+  context: ContextSummary | null;
+};
+
 export type ToolCall = {
   id: string;
   name: string;
@@ -38,6 +82,9 @@ export type AgentEvent =
   | { type: "step-start"; id: string; title: string }
   | { type: "step-complete"; id: string; result?: string }
   | { type: "step-failed"; id: string; error: string }
+  | { type: "project-scanned"; project: ProjectScan }
+  | { type: "plan-updated"; plan: TaskPlan }
+  | { type: "context-selected"; context: ContextSummary }
   | { type: "tool-start"; id: string; name: string; summary: string }
   | { type: "tool-complete"; id: string; name: string; summary: string }
   | { type: "tool-failed"; id: string; name: string; error: string }
@@ -54,6 +101,9 @@ export interface AgentRunner {
   readonly mode: "mock" | "model";
   readonly modelName: string;
   run(task: string, options: AgentRunOptions): AsyncGenerator<AgentEvent>;
+  scan(options: AgentRunOptions): Promise<ProjectScan>;
+  getState(): AgentSessionState;
+  clearState(): void;
 }
 
 export type ChatMessage =

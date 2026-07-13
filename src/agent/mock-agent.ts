@@ -1,90 +1,130 @@
+import { AgentStateStore } from "./agent-state.ts";
+import {
+  formatProjectSummary,
+  selectTaskContext,
+} from "../context/context-selector.ts";
+import { scanProject } from "../context/project-scanner.ts";
 import { openWorkspace } from "../context/workspace.ts";
 import type {
   AgentEvent,
   AgentRunOptions,
   AgentRunner,
-  ToolCall,
+  AgentSessionState,
+  ProjectScan,
 } from "../types.ts";
-import type { ToolRegistry } from "../tools/registry.ts";
 
 export class MockAgent implements AgentRunner {
   readonly mode = "mock" as const;
-  readonly modelName = "Mock (只读工具演示)";
-  private readonly tools: ToolRegistry;
+  readonly modelName = "Mock（智能上下文演示）";
+  private readonly state = new AgentStateStore();
+  private readonly contextTokenBudget: number;
 
-  constructor(tools: ToolRegistry) {
-    this.tools = tools;
+  constructor(contextTokenBudget = 6_000) {
+    this.contextTokenBudget = contextTokenBudget;
+  }
+
+  async scan(options: AgentRunOptions): Promise<ProjectScan> {
+    const workspace = await openWorkspace(options.workspace);
+    const project = await scanProject(workspace, options.signal);
+    this.state.clear();
+    this.state.setProject(project);
+    return project;
+  }
+
+  getState(): AgentSessionState {
+    return this.state.snapshot();
+  }
+
+  clearState(): void {
+    this.state.clear();
   }
 
   async *run(
     task: string,
     options: AgentRunOptions,
   ): AsyncGenerator<AgentEvent> {
+    this.state.begin(task);
+
     try {
       const workspace = await openWorkspace(options.workspace);
-      const calls: ToolCall[] = [
-        {
-          id: "mock-list",
-          name: "list_files",
-          arguments: JSON.stringify({ path: ".", maxDepth: 2 }),
-        },
-        {
-          id: "mock-read",
-          name: "read_file",
-          arguments: JSON.stringify({ path: "package.json", startLine: 1, endLine: 80 }),
-        },
-        {
-          id: "mock-search",
-          name: "search_code",
-          arguments: JSON.stringify({ query: "CodeMuse", path: "src", maxResults: 20 }),
-        },
-      ];
-      const summaries: string[] = [];
+      const initialPlan = this.state.snapshot().plan;
+      if (initialPlan) yield { type: "plan-updated", plan: initialPlan };
 
-      yield { type: "step-start", id: "inspect", title: "执行本地只读分析演示" };
-      for (const call of calls) {
-        if (options.signal.aborted) throw options.signal.reason;
-        yield {
-          type: "tool-start",
-          id: call.id,
-          name: call.name,
-          summary: call.arguments,
-        };
+      this.state.setStep("scan", "running");
+      yield { type: "step-start", id: "scan", title: "扫描项目结构与技术栈" };
+      const project = await scanProject(workspace, options.signal);
+      this.state.setProject(project);
+      this.state.setStep("scan", "completed");
+      yield { type: "project-scanned", project };
+      yield {
+        type: "step-complete",
+        id: "scan",
+        result: `识别 ${project.fileCount} 个文件`,
+      };
 
-        try {
-          const result = await this.tools.execute(call, workspace, options.signal);
-          summaries.push(`${call.name}: ${result.summary}`);
-          yield {
-            type: "tool-complete",
-            id: call.id,
-            name: call.name,
-            summary: result.summary,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          summaries.push(`${call.name}: ${message}`);
-          yield { type: "tool-failed", id: call.id, name: call.name, error: message };
-        }
-      }
-      yield { type: "step-complete", id: "inspect", result: "只读工具演示完成" };
+      this.state.setStep("context", "running");
+      yield { type: "step-start", id: "context", title: "选择任务相关上下文" };
+      const selection = await selectTaskContext(
+        task,
+        project,
+        workspace,
+        this.contextTokenBudget,
+        options.signal,
+      );
+      this.state.setContext(selection.summary);
+      this.state.setStep("context", "completed");
+      yield { type: "context-selected", context: selection.summary };
+      yield {
+        type: "step-complete",
+        id: "context",
+        result: `选择 ${selection.summary.files.length} 个文件，约 ${selection.summary.estimatedTokens} Tokens`,
+      };
 
+      this.state.setStep("analyze", "running");
+      yield { type: "step-start", id: "analyze", title: "执行本地智能上下文演示" };
+      if (options.signal.aborted) throw options.signal.reason;
+      this.state.setStep("analyze", "completed");
+      yield {
+        type: "step-complete",
+        id: "analyze",
+        result: "已根据路径与内容相关性整理证据",
+      };
+
+      this.state.setStep("respond", "running");
       yield { type: "message-start" };
-      const content =
-        `已收到任务：“${task}”。\n` +
-        "当前处于 Mock 模式，但上面的文件列表、读取和搜索均为真实本地只读操作。\n" +
-        `${summaries.join("\n")}\n` +
-        "配置 CODEMUSE_API_KEY 后，模型会根据自然语言任务自主选择这些工具。";
+      const selectedPaths = selection.summary.files.map((file) => file.path);
+      const content = [
+        `已收到任务：“${task}”。`,
+        "",
+        formatProjectSummary(project),
+        "",
+        `本次在 ${selection.summary.budgetTokens} Token 预算内选择了：`,
+        ...selectedPaths.map((path) => `- ${path}`),
+        "",
+        selection.summary.truncated
+          ? `另有 ${selection.summary.omittedFiles} 个候选文件未放入上下文，避免发送整个项目。`
+          : "候选上下文未发生裁剪。",
+        "当前为 Mock 模式，不进行模型推理；上述扫描、读取、排序和 Token 控制均为真实本地操作。",
+        "配置 CODEMUSE_API_KEY 后，精选代码片段会交给 DeepSeek、GLM 或兼容模型继续分析。",
+      ].join("\n");
 
-      for (const character of content) {
+      for (let offset = 0; offset < content.length; offset += 16) {
         if (options.signal.aborted) throw options.signal.reason;
-        yield { type: "message-delta", content: character };
-        await wait(2, options.signal);
+        yield { type: "message-delta", content: content.slice(offset, offset + 16) };
+        await wait(1, options.signal);
       }
       yield { type: "message-complete" };
-      yield { type: "complete", summary: "Mock 只读分析完成" };
-    } catch {
-      yield { type: "message-complete" };
-      yield { type: "notice", message: "任务已取消" };
+      this.state.setStep("respond", "completed");
+      yield { type: "complete", summary: "Mock 任务规划与上下文选择完成" };
+    } catch (error) {
+      if (options.signal.aborted) {
+        this.state.failRunningSteps("cancelled");
+        yield { type: "notice", message: "任务已取消" };
+        return;
+      }
+      this.state.failRunningSteps("failed");
+      const message = error instanceof Error ? error.message : String(error);
+      yield { type: "error", message };
     }
   }
 }
@@ -95,10 +135,14 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
       reject(signal.reason);
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
+    const onAbort = (): void => {
       clearTimeout(timer);
       reject(signal.reason);
-    }, { once: true });
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }

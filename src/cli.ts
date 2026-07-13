@@ -9,7 +9,14 @@ import {
   parseSlashCommand,
   type SlashCommand,
 } from "./commands/slash-command.ts";
-import { handleAgentEvent, printHeader, printPrompt } from "./ui/terminal.ts";
+import {
+  handleAgentEvent,
+  printContextSummary,
+  printHeader,
+  printPlan,
+  printProjectScan,
+  printPrompt,
+} from "./ui/terminal.ts";
 import { color } from "./ui/colors.ts";
 
 const args = process.argv.slice(2);
@@ -45,8 +52,8 @@ async function processLine(line: string): Promise<void> {
 
   const command = parseSlashCommand(value);
   if (command) {
-    const shouldContinue = handleCommand(command);
-    if (shouldContinue) printPrompt();
+    const shouldContinue = await handleCommand(command);
+    if (shouldContinue && !controller) printPrompt();
     return;
   }
 
@@ -56,33 +63,47 @@ async function processLine(line: string): Promise<void> {
     return;
   }
 
-  controller = new AbortController();
+  const taskController = new AbortController();
+  controller = taskController;
   console.log(`\n${color.bold("You")}\n${value}\n`);
 
   try {
     for await (const event of agent.run(value, {
-      signal: controller.signal,
+      signal: taskController.signal,
       workspace,
     })) {
+      if (exiting) continue;
+      if (
+        taskController.signal.aborted &&
+        event.type !== "notice" &&
+        event.type !== "error"
+      ) {
+        continue;
+      }
       handleAgentEvent(event);
     }
   } catch (error) {
-    if (!controller.signal.aborted) {
+    if (!taskController.signal.aborted) {
       const message = error instanceof Error ? error.message : String(error);
       console.log(color.error(`错误：${message}`));
     }
   } finally {
-    controller = null;
+    if (controller === taskController) controller = null;
     if (!exiting) printPrompt();
   }
 }
 
-function handleCommand(command: SlashCommand): boolean {
+async function handleCommand(command: SlashCommand): Promise<boolean> {
   switch (command.name) {
     case "help":
       console.log(`\n${HELP_TEXT}\n`);
       return true;
     case "clear":
+      if (controller) {
+        console.log(color.warning("任务运行时不能清空状态，请先输入 /cancel。"));
+        return false;
+      }
+      agent.clearState();
       console.clear();
       printHeader(workspace, agent.modelName, agent.mode);
       return true;
@@ -98,6 +119,35 @@ function handleCommand(command: SlashCommand): boolean {
       return true;
     case "workspace":
       console.log(`当前工作区：${workspace}`);
+      return true;
+    case "plan":
+      printPlan(agent.getState().plan);
+      return true;
+    case "context":
+      printContextSummary(agent.getState().context);
+      return true;
+    case "scan":
+      if (controller) {
+        console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+        return false;
+      }
+      const scanController = new AbortController();
+      controller = scanController;
+      console.log(color.brand("\n● 重新扫描当前项目"));
+      try {
+        const project = await agent.scan({
+          signal: scanController.signal,
+          workspace,
+        });
+        if (!exiting) printProjectScan(project);
+      } catch (error) {
+        if (!scanController.signal.aborted) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.log(color.error(`扫描失败：${message}`));
+        }
+      } finally {
+        if (controller === scanController) controller = null;
+      }
       return true;
     case "exit":
       shutdown();

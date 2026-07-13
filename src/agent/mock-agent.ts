@@ -18,7 +18,7 @@ import type { ToolRegistry } from "../tools/registry.ts";
 
 export class MockAgent implements AgentRunner {
   readonly mode = "mock" as const;
-  readonly modelName = "Mock（安全修改流程演示）";
+  readonly modelName = "Mock（受控开发流程演示）";
   private readonly state = new AgentStateStore();
   private readonly contextTokenBudget: number;
   private readonly tools: ToolRegistry;
@@ -121,8 +121,8 @@ export class MockAgent implements AgentRunner {
         selection.summary.truncated
           ? `另有 ${selection.summary.omittedFiles} 个候选文件未放入上下文，避免发送整个项目。`
           : "候选上下文未发生裁剪。",
-        "当前为 Mock 模式，不进行模型推理，也不会自动生成或写入补丁。",
-        "配置真实模型后，Agent 可提出唯一局部补丁；每次写入都必须先展示 Diff 并获得你的明确确认。",
+        "当前为 Mock 模式，不进行模型推理，不会自动生成补丁或执行 npm scripts。",
+        "配置真实模型后，Agent 可安全修改代码，并在项目根目录存在 package.json 时请求执行允许的验证脚本。",
       ].join("\n");
 
       for (let offset = 0; offset < content.length; offset += 16) {
@@ -132,7 +132,7 @@ export class MockAgent implements AgentRunner {
       }
       yield { type: "message-complete" };
       this.state.setStep("respond", "completed");
-      yield { type: "complete", summary: "Mock 任务规划与安全修改流程演示完成" };
+      yield { type: "complete", summary: "Mock 任务规划与受控开发流程演示完成" };
     } catch (error) {
       if (options.signal.aborted) {
         this.state.failRunningSteps("cancelled");

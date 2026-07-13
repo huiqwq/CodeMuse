@@ -29,9 +29,11 @@ const SYSTEM_PROMPT = `你是 CodeMuse，一个运行在用户终端中的本地
 调用 apply_patch 前必须先读取目标文件；oldText 必须来自实际文件且不含行号。
 禁止整文件覆盖，禁止修改用户未要求的内容，禁止在用户拒绝后重复请求同一写入。
 每次写入都会先向用户展示 Diff，只有用户明确同意才会落盘。
-所有路径必须使用工作区相对路径。你不能执行 Shell、Git 写操作或删除文件。
-工具失败时应根据错误调整参数，不得编造结果。
-最终回答应引用实际文件路径，说明已修改、未修改和仍需验证的内容。`;
+所有路径必须使用工作区相对路径。你不能执行任意 Shell、Git 写操作或删除文件。
+需要验证代码时，必须先调用 list_scripts 查看根目录 package.json；只能用 run_script 执行其中标记为允许的 test/build/lint/typecheck/check 类脚本。
+run_script 只接受脚本名称，不得尝试传递命令或额外参数。每次执行都必须由用户确认。
+工具失败或脚本返回非零退出码时应如实分析，不得编造成功结果。
+最终回答应引用实际文件路径，并说明修改、脚本命令、退出码和仍需处理的内容。`;
 
 type PendingToolCall = {
   id: string;
@@ -225,6 +227,9 @@ export class ModelAgent implements AgentRunner {
               name: call.name,
               summary: result.summary,
             };
+            if (result.displayContent) {
+              yield { type: "command-output", content: result.displayContent };
+            }
             messages.push({
               role: "tool",
               toolCallId: call.id,

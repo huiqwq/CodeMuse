@@ -1,6 +1,6 @@
 # CodeMuse 项目总纲与开发操作指南
 
-> 当前实施版本：v0.4.0 安全局部修改与撤销。具体变化见 [releases/v0.4.0.md](releases/v0.4.0.md)。
+> 当前实施版本：v0.5.0 受控 npm 脚本与验证。具体变化见 [releases/v0.5.0.md](releases/v0.5.0.md)。
 
 ## 1. 项目定位
 
@@ -201,68 +201,91 @@ interface AgentTool<TInput, TOutput> {
 ### 6.1 v0.1.0 CLI 与模型基线
 
 - 持续输入、流式输出、取消和模型配置。
-- API Key 缺失时自动进入 Mock 模式。
 
 ### 6.2 v0.2.0 只读代码库分析
 
-- 工作区安全边界和敏感文件保护。
-- `list_files`、`read_file`、`search_code`。
+- 工作区安全和 `list_files`、`read_file`、`search_code`。
 - `LLM -> Tool Call -> Tool Result -> LLM` Agent Loop。
 
 ### 6.3 v0.3.0 规划与上下文
 
-- 项目扫描、四步任务计划和相关代码片段选择。
-- 默认 6000 Tokens 的可配置上下文预算。
+- 项目扫描、任务计划、代码片段选择和 Token 预算。
 - `/plan`、`/context` 和 `/scan`。
 
 ### 6.4 v0.4.0 安全局部修改
 
-- `apply_patch` 唯一局部片段替换。
-- Diff 预览、明确授权、并发变化保护和安全替换。
-- 当前进程内任务变更日志和 `/undo`。
-- 终端控制字符转义。
-- 共 26 项自动测试及 TypeScript 类型检查。
+- `apply_patch`、Diff 授权、安全写入和 `/undo`。
+- 唯一匹配、整文件覆盖和并发变化保护。
 
-### 6.5 当前能力边界
+### 6.5 v0.5.0 受控验证
 
-v0.4.0 可以在真实模型模式下修改已存在的 UTF-8 文本文件，但只能做用户确认后的精确局部替换。它不能创建、删除或重命名文件，不能执行 Shell、构建、测试或 Git 写操作。MockAgent 不会生成或写入补丁。
+- `list_scripts` 解析根目录 `package.json`。
+- `run_script` 执行允许的 npm 验证脚本。
+- 执行授权、超时、输出上限、退出码和进程树终止。
+- 敏感环境变量清理。
+- 共 34 项自动测试和 TypeScript 类型检查。
 
-## 7. CLI 操作指南
+### 6.6 当前能力边界
 
-### 7.1 检查环境
+v0.5.0 可以分析和局部修改代码，并在真实模型模式下请求运行根目录 `package.json` 中允许的 test/build/lint/typecheck/check 脚本。它不能运行任意 Shell、安装依赖、启动开发服务器、执行 Git 写操作或处理 Monorepo 子包。
 
-```powershell
-node --version
-npm --version
-where.exe node
-```
+## 7. CLI 与 package.json 操作指南
 
-当前要求 Node.js 22.18 或更高版本。
+### 7.1 CodeMuse 源码开发必须进入 package.json 所在目录
 
-### 7.2 首次安装和全局注册
+`npm install`、`npm test`、`npm run typecheck` 和 `npm link` 会读取当前目录的 `package.json`：
 
 ```powershell
 cd "C:\Users\Administrator\Documents\Codex\2026-07-13\u-an\CodeMuse"
-npm install
-npm link
-where.exe codemuse
+Test-Path .\package.json
+npm test
+npm run typecheck
 ```
 
-以后分析或修改当前目录：
+`Test-Path` 必须返回 `True`。不能把 PowerShell 显示的 `PS C:\...>` 提示符当作命令输入。
+
+从任意目录也可以：
 
 ```powershell
+npm --prefix "C:\Users\Administrator\Documents\Codex\2026-07-13\u-an\CodeMuse" test
+```
+
+### 7.2 其他成员首次安装
+
+```powershell
+git clone https://github.com/huiqwq/CodeMuse.git
+cd CodeMuse
+npm install
+npm test
+npm run typecheck
+npm link
+```
+
+每个人的绝对路径可以不同，只要进入自己电脑上包含 CodeMuse `package.json` 的目录。
+
+### 7.3 使用全局命令
+
+```powershell
+cd "D:\projects\my-app"
 codemuse .
 ```
 
-指定项目：
+目标项目没有 `package.json` 时仍可扫描、读取、搜索和局部修改；只有 npm scripts、构建和测试功能不可用。
 
-```powershell
-codemuse "D:\projects\my-app"
+目标项目使用脚本功能时，根目录至少需要：
+
+```json
+{
+  "name": "my-app",
+  "scripts": {
+    "test": "node tests/run.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  }
+}
 ```
 
-无 API Key 时进入 Mock 模式，真实扫描和上下文选择仍会运行，但不会生成或写入补丁。
-
-### 7.3 CodeMuse 内部命令
+### 7.4 CodeMuse 内部命令
 
 ```text
 /help       查看命令
@@ -277,81 +300,56 @@ codemuse "D:\projects\my-app"
 /exit       退出 CodeMuse
 ```
 
-模型提出写入或 `/undo` 时必须检查 Diff。只有输入 `y` 或 `yes` 才授权；其他输入默认拒绝。撤销记录在退出 CodeMuse 后消失。
+写入、撤销或脚本执行时必须检查展示内容。只有输入 `y` 或 `yes` 才授权。
 
-`npm test` 是 PowerShell 命令，必须先输入 `/exit` 退出 CodeMuse，不能输入到 `codemuse>` 中。
+### 7.5 模型配置
 
-### 7.4 运行测试
-
-```powershell
-npm test
-npm run typecheck
-```
-
-### 7.5 调整上下文预算
-
-```powershell
-$env:CODEMUSE_CONTEXT_TOKENS="8000"
-codemuse .
-```
-
-默认值为 6000，允许范围为 500 到 100000。
-
-### 7.6 使用 DeepSeek
+DeepSeek：
 
 ```powershell
 $env:CODEMUSE_PROVIDER="deepseek"
 $env:CODEMUSE_API_KEY="你的 API Key"
-$env:CODEMUSE_BASE_URL="https://api.deepseek.com"
-$env:CODEMUSE_MODEL="deepseek-chat"
 codemuse .
 ```
 
-### 7.7 使用 GLM
+GLM：
 
 ```powershell
 $env:CODEMUSE_PROVIDER="glm"
 $env:CODEMUSE_API_KEY="你的 API Key"
-$env:CODEMUSE_BASE_URL="https://open.bigmodel.cn/api/paas/v4"
 $env:CODEMUSE_MODEL="以平台当前可用模型为准"
 codemuse .
 ```
 
-真实 API Key 不得写入代码、README、Issue、截图或 Git 提交。
+真实 API Key 不得写入代码、`.env`、README、Issue、截图或 Git 提交。
 
 ## 8. 后续功能如何结合现有代码
 
-### 8.1 已完成的分析与修改链路
+### 8.1 已完成的分析、修改与验证链路
 
-v0.1.0 到 v0.4.0 已完成：
+v0.1.0 到 v0.5.0 已完成：
 
 ```text
 CLI 输入
-  -> TaskPlanner
-  -> ProjectScanner
-  -> ContextSelector + TokenBudget
+  -> TaskPlanner + Context
   -> ModelAgent
-  -> ToolRegistry
-  -> read_file
-  -> apply_patch
-  -> Diff + 用户授权
-  -> AtomicWrite + ChangeJournal
-  -> /undo
+  -> 读取与搜索
+  -> apply_patch + Diff + 授权
+  -> list_scripts
+  -> run_script + 授权
+  -> exitCode / stdout / stderr
+  -> 模型分析验证结果
 ```
 
-CLI 负责展示和授权，模型不能直接写文件。Tool Runtime 是唯一读取和修改本地内容的模块。
+Tool Runtime 是唯一读取、修改和执行项目脚本的模块。模型不能直接操作文件或 Shell。
 
-### 8.2 v0.5.0 Shell、构建与测试
+### 8.2 v0.6.0 自动错误修复
 
-模型只能选择受控项目脚本，不能直接提供任意 Shell 字符串。执行必须包含固定工作目录、超时、输出上限、退出码、取消能力和危险模式拦截。
+将失败退出码和关键错误返回 Agent。Agent 搜索相关代码、提出补丁并再次验证；达到最大轮数或重复相同错误时停止。
 
-### 8.3 v0.6.0 自动错误修复
+### 8.3 v0.7.0 会话恢复
 
-将测试退出码和关键错误作为 Tool Result 返回 Agent。Agent 再次搜索、修改和验证；达到最大轮数或重复相同错误时停止。
-
-### 8.4 v0.7.0 会话恢复
-
-数据保存在工作区 `.codemuse/`，记录任务、计划、工具调用、Diff、测试结果和状态。后续增加 `/history` 和 `/resume`。
+在工作区 `.codemuse/` 保存任务、计划、工具调用、Diff、脚本结果和状态，增加 `/history` 与 `/resume`。
 
 ## 9. 版本路线图
 
@@ -403,8 +401,8 @@ git push origin main
 每个正式版本还要创建标签：
 
 ```powershell
-git tag -a v0.4.0 -m "CodeMuse v0.4.0"
-git push origin v0.4.0
+git tag -a v0.5.0 -m "CodeMuse v0.5.0"
+git push origin v0.5.0
 ```
 
 四名成员开始修改前应在小组中说明负责文件，避免同时修改同一模块。推送前先同步远程；遇到冲突时解决冲突并重新运行测试。

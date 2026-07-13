@@ -12,7 +12,7 @@ export function printHeader(workspace: string, model: string, mode: string): voi
   const rule = "─".repeat(Math.max(36, width));
 
   console.log();
-  console.log(color.bold(color.brand("  CodeMuse  v0.4.0")));
+  console.log(color.bold(color.brand("  CodeMuse  v0.5.0")));
   console.log(`  ${color.muted("Workspace")}  ${sanitizeTerminalText(workspace)}`);
   console.log(`  ${color.muted("Model")}      ${sanitizeTerminalText(model)}`);
   console.log(`  ${color.muted("Mode")}       ${sanitizeTerminalText(mode)}`);
@@ -132,6 +132,11 @@ export function handleAgentEvent(event: AgentEvent): void {
       break;
     case "tool-failed":
       console.log(color.error(`  × ${sanitizeTerminalText(event.name)}  ${sanitizeTerminalText(event.error)}`));
+      break;
+    case "command-output":
+      console.log(color.bold("\n命令输出"));
+      console.log(sanitizeTerminalText(event.content));
+      console.log();
       break;
     case "notice":
       console.log(color.warning(sanitizeTerminalText(event.message)));

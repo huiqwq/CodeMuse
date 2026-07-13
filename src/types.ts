@@ -53,7 +53,7 @@ export type ApprovalDecision = "approved" | "denied";
 
 export type ApprovalRequest = {
   id: string;
-  kind: "write" | "undo";
+  kind: "write" | "undo" | "execute";
   title: string;
   summary: string;
   paths: string[];
@@ -111,6 +111,7 @@ export type AgentEvent =
   | { type: "tool-start"; id: string; name: string; summary: string }
   | { type: "tool-complete"; id: string; name: string; summary: string }
   | { type: "tool-failed"; id: string; name: string; error: string }
+  | { type: "command-output"; content: string }
   | { type: "notice"; message: string }
   | { type: "error"; message: string }
   | { type: "complete"; summary?: string };

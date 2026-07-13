@@ -19,6 +19,7 @@ export class ToolRegistry {
   private readonly tools = new Map<string, AgentTool>();
   private readonly changes = new ChangeJournal();
   private readonly observedFiles = new Set<string>();
+  private scriptsListed = false;
 
   register(tool: AgentTool): this {
     const name = tool.definition.function.name;
@@ -35,11 +36,13 @@ export class ToolRegistry {
 
   beginTask(workspace: WorkspaceContext, task: string): void {
     this.observedFiles.clear();
+    this.scriptsListed = false;
     this.changes.beginTask(workspace, task);
   }
 
   finishTask(): void {
     this.observedFiles.clear();
+    this.scriptsListed = false;
     this.changes.finishTask();
   }
 
@@ -74,7 +77,9 @@ export class ToolRegistry {
       changes: this.changes,
       requestApproval: runtime.requestApproval ?? denyApproval,
       hasObservedFile: (path) => this.observedFiles.has(path),
+      hasListedScripts: () => this.scriptsListed,
     });
+
     if (
       call.name === "read_file" &&
       value &&
@@ -84,8 +89,9 @@ export class ToolRegistry {
     ) {
       this.observedFiles.add(value.path);
     }
-    const serialized = JSON.stringify(value, null, 2);
+    if (call.name === "list_scripts") this.scriptsListed = true;
 
+    const serialized = JSON.stringify(value, null, 2);
     return {
       value,
       modelContent:
@@ -93,6 +99,7 @@ export class ToolRegistry {
           ? serialized
           : `${serialized.slice(0, MAX_MODEL_CONTENT)}\n...工具结果已截断`,
       summary: tool.summarize(value),
+      displayContent: tool.display?.(value),
     };
   }
 }

@@ -22,7 +22,7 @@ class PatchProvider implements ModelProvider {
     _signal: AbortSignal,
   ): AsyncGenerator<ModelStreamEvent> {
     this.calls += 1;
-    assert.equal(tools.length, 4);
+    assert.equal(tools.length, 6);
 
     if (this.calls === 1) {
       yield {

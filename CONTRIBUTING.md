@@ -34,6 +34,8 @@ chore: 配置和工具维护
 
 ## 提交前检查
 
+以下 npm 命令必须在包含 CodeMuse `package.json` 的源码根目录执行。先运行 `Test-Path .\package.json`，结果应为 `True`。
+
 ```powershell
 npm test
 npm run typecheck

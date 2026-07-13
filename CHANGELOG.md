@@ -2,6 +2,38 @@
 
 CodeMuse 的重要版本变化记录在此文件中。每个正式版本还必须在 `docs/releases/` 下提供独立说明文档，记录目标、功能、限制、测试和使用方法。
 
+## [0.5.0] - 2026-07-13
+
+详细说明：[docs/releases/v0.5.0.md](docs/releases/v0.5.0.md)
+
+### Added
+
+- `list_scripts` 安全读取根目录 `package.json` scripts。
+- `run_script` 受控执行 test/build/lint/typecheck/check 类 npm scripts。
+- 执行前脚本内容展示和 `execute` 风险授权。
+- 超时、输出上限、退出码、stdout/stderr 和命令输出事件。
+- 取消或超时时的跨平台进程树终止。
+- 模型 API Key、Token、Secret 和 Password 环境变量清理。
+- Windows `node.exe + npm-cli.js` 无 Shell 调用。
+- `package.json` 开发目录与目标项目边界说明。
+- 脚本发现、拒绝、执行、失败、超时和 Agent 集成测试。
+
+### Changed
+
+- 项目版本升级为 `0.5.0`。
+- ModelAgent 可在用户授权后运行允许的项目验证脚本。
+- Mock 模式说明脚本能力，但不会执行项目命令。
+- 自动测试由 26 项增加到 34 项。
+
+### Security
+
+- 不接受任意 Shell 字符串或额外参数。
+- 脚本必须来自当前任务的 `list_scripts`。
+- 禁止 dev/start/install/prepare/deploy/publish 和 pre/post 脚本。
+- 设置 `--ignore-scripts` 和 `npm_config_ignore_scripts=true`。
+- 每次执行必须获得明确授权。
+- 当前仍不执行 npm install、Git 写操作或 Monorepo 子包脚本。
+
 ## [0.4.0] - 2026-07-13
 
 详细说明：[docs/releases/v0.4.0.md](docs/releases/v0.4.0.md)

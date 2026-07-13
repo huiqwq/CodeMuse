@@ -6,7 +6,7 @@ import type {
 import type { ChangeJournal } from "../changes/change-journal.ts";
 import type { WorkspaceContext } from "../context/workspace.ts";
 
-export type ToolRisk = "read" | "write";
+export type ToolRisk = "read" | "write" | "execute";
 
 export type ToolContext = {
   workspace: WorkspaceContext;
@@ -14,6 +14,7 @@ export type ToolContext = {
   changes: ChangeJournal;
   requestApproval: ApprovalHandler;
   hasObservedFile: (path: string) => boolean;
+  hasListedScripts: () => boolean;
 };
 
 export type ToolRuntimeOptions = {
@@ -24,6 +25,7 @@ export type ToolExecutionResult = {
   value: unknown;
   modelContent: string;
   summary: string;
+  displayContent?: string;
 };
 
 export interface AgentTool<TInput = unknown, TOutput = unknown> {
@@ -32,6 +34,7 @@ export interface AgentTool<TInput = unknown, TOutput = unknown> {
   validate(input: unknown): TInput;
   execute(input: TInput, context: ToolContext): Promise<TOutput>;
   summarize(output: TOutput): string;
+  display?(output: TOutput): string | undefined;
 }
 
 export type RegisteredToolCall = ToolCall;

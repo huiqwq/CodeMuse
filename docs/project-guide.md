@@ -1,6 +1,6 @@
 # CodeMuse 项目总纲与开发操作指南
 
-> 当前实施版本：v0.3.0 任务规划与智能上下文管理。具体变化见 [releases/v0.3.0.md](releases/v0.3.0.md)。
+> 当前实施版本：v0.4.0 安全局部修改与撤销。具体变化见 [releases/v0.4.0.md](releases/v0.4.0.md)。
 
 ## 1. 项目定位
 
@@ -200,29 +200,32 @@ interface AgentTool<TInput, TOutput> {
 
 ### 6.1 v0.1.0 CLI 与模型基线
 
-- 持续输入的终端 REPL、流式输出、取消和斜杠命令。
-- MockAgent、ModelAgent、DeepSeek、GLM 和自定义兼容模型配置。
+- 持续输入、流式输出、取消和模型配置。
 - API Key 缺失时自动进入 Mock 模式。
 
 ### 6.2 v0.2.0 只读代码库分析
 
-- 工作区安全边界、真实路径和敏感文件保护。
+- 工作区安全边界和敏感文件保护。
 - `list_files`、`read_file`、`search_code`。
 - `LLM -> Tool Call -> Tool Result -> LLM` Agent Loop。
-- Mock 模式真实执行本地只读工具。
 
 ### 6.3 v0.3.0 规划与上下文
 
-- 项目类型、语言、框架、包管理器和关键文件识别。
-- 四步任务计划及状态记录。
-- 任务相关文件评分和代码片段选择。
+- 项目扫描、四步任务计划和相关代码片段选择。
 - 默认 6000 Tokens 的可配置上下文预算。
 - `/plan`、`/context` 和 `/scan`。
-- 共 18 项自动测试及 TypeScript 类型检查。
 
-### 6.4 当前能力边界
+### 6.4 v0.4.0 安全局部修改
 
-v0.3.0 是具备任务规划和智能上下文的只读 Agent。它可以真实扫描、读取和搜索项目，但不能修改文件、执行 Shell、运行测试或执行 Git 写操作。MockAgent 用于无 Key 开发和验收，不会伪装成真实模型推理。
+- `apply_patch` 唯一局部片段替换。
+- Diff 预览、明确授权、并发变化保护和安全替换。
+- 当前进程内任务变更日志和 `/undo`。
+- 终端控制字符转义。
+- 共 26 项自动测试及 TypeScript 类型检查。
+
+### 6.5 当前能力边界
+
+v0.4.0 可以在真实模型模式下修改已存在的 UTF-8 文本文件，但只能做用户确认后的精确局部替换。它不能创建、删除或重命名文件，不能执行 Shell、构建、测试或 Git 写操作。MockAgent 不会生成或写入补丁。
 
 ## 7. CLI 操作指南
 
@@ -245,19 +248,19 @@ npm link
 where.exe codemuse
 ```
 
-以后分析当前目录：
+以后分析或修改当前目录：
 
 ```powershell
 codemuse .
 ```
 
-分析指定项目：
+指定项目：
 
 ```powershell
 codemuse "D:\projects\my-app"
 ```
 
-无 API Key 时进入 Mock 模式，但扫描、读取、上下文选择和 Token 估算仍是真实本地操作。
+无 API Key 时进入 Mock 模式，真实扫描和上下文选择仍会运行，但不会生成或写入补丁。
 
 ### 7.3 CodeMuse 内部命令
 
@@ -268,10 +271,13 @@ codemuse "D:\projects\my-app"
 /plan       查看最近一次任务计划
 /context    查看最近一次上下文选择
 /scan       重新扫描当前项目
+/undo       撤销当前会话最近一次任务修改
 /clear      清空终端和当前任务状态
 /cancel     取消当前任务
 /exit       退出 CodeMuse
 ```
+
+模型提出写入或 `/undo` 时必须检查 Diff。只有输入 `y` 或 `yes` 才授权；其他输入默认拒绝。撤销记录在退出 CodeMuse 后消失。
 
 `npm test` 是 PowerShell 命令，必须先输入 `/exit` 退出 CodeMuse，不能输入到 `codemuse>` 中。
 
@@ -315,9 +321,9 @@ codemuse .
 
 ## 8. 后续功能如何结合现有代码
 
-### 8.1 已完成的只读分析链路
+### 8.1 已完成的分析与修改链路
 
-v0.1.0 到 v0.3.0 已完成：
+v0.1.0 到 v0.4.0 已完成：
 
 ```text
 CLI 输入
@@ -326,26 +332,24 @@ CLI 输入
   -> ContextSelector + TokenBudget
   -> ModelAgent
   -> ToolRegistry
-  -> Workspace Guard
-  -> list_files / read_file / search_code
-  -> 模型最终回答
+  -> read_file
+  -> apply_patch
+  -> Diff + 用户授权
+  -> AtomicWrite + ChangeJournal
+  -> /undo
 ```
 
-CLI 只展示事件，不直接读取项目；模型只能通过精选上下文和受控工具获取代码。
+CLI 负责展示和授权，模型不能直接写文件。Tool Runtime 是唯一读取和修改本地内容的模块。
 
-### 8.2 v0.4.0 代码修改与 Diff
-
-新增局部补丁、Diff 生成、写入授权和任务级撤销。流程为：读取文件 -> 校验原片段 -> 内存试应用 -> 展示 Diff -> 用户确认 -> 原子写入。禁止模型无条件覆盖整个文件。
-
-### 8.3 v0.5.0 Shell、构建与测试
+### 8.2 v0.5.0 Shell、构建与测试
 
 模型只能选择受控项目脚本，不能直接提供任意 Shell 字符串。执行必须包含固定工作目录、超时、输出上限、退出码、取消能力和危险模式拦截。
 
-### 8.4 v0.6.0 自动错误修复
+### 8.3 v0.6.0 自动错误修复
 
 将测试退出码和关键错误作为 Tool Result 返回 Agent。Agent 再次搜索、修改和验证；达到最大轮数或重复相同错误时停止。
 
-### 8.5 v0.7.0 会话恢复
+### 8.4 v0.7.0 会话恢复
 
 数据保存在工作区 `.codemuse/`，记录任务、计划、工具调用、Diff、测试结果和状态。后续增加 `/history` 和 `/resume`。
 
@@ -399,8 +403,8 @@ git push origin main
 每个正式版本还要创建标签：
 
 ```powershell
-git tag -a v0.3.0 -m "CodeMuse v0.3.0"
-git push origin v0.3.0
+git tag -a v0.4.0 -m "CodeMuse v0.4.0"
+git push origin v0.4.0
 ```
 
 四名成员开始修改前应在小组中说明负责文件，避免同时修改同一模块。推送前先同步远程；遇到冲突时解决冲突并重新运行测试。

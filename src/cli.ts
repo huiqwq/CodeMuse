@@ -11,19 +11,31 @@ import {
 } from "./commands/slash-command.ts";
 import {
   handleAgentEvent,
+  printApprovalRequest,
   printContextSummary,
   printHeader,
   printPlan,
   printProjectScan,
   printPrompt,
+  sanitizeTerminalText,
 } from "./ui/terminal.ts";
 import { color } from "./ui/colors.ts";
+import type {
+  ApprovalDecision,
+  ApprovalHandler,
+} from "./types.ts";
+
+type PendingApproval = {
+  id: string;
+  resolve: (decision: ApprovalDecision) => void;
+};
 
 const args = process.argv.slice(2);
 const workspace = resolve(args.find((arg) => !arg.startsWith("-")) || ".");
 const agent = createAgent();
 const readline = createInterface({ input, output, terminal: true });
 let controller: AbortController | null = null;
+let pendingApproval: PendingApproval | null = null;
 let exiting = false;
 
 printHeader(workspace, agent.modelName, agent.mode);
@@ -31,6 +43,7 @@ printPrompt();
 
 readline.on("SIGINT", () => {
   if (controller) {
+    settleApproval("denied");
     controller.abort(new Error("用户取消任务"));
     return;
   }
@@ -44,6 +57,11 @@ readline.on("close", () => {
 
 async function processLine(line: string): Promise<void> {
   const value = line.trim();
+
+  if (pendingApproval) {
+    handleApprovalAnswer(value);
+    return;
+  }
 
   if (!value) {
     printPrompt();
@@ -65,12 +83,13 @@ async function processLine(line: string): Promise<void> {
 
   const taskController = new AbortController();
   controller = taskController;
-  console.log(`\n${color.bold("You")}\n${value}\n`);
+  console.log(`\n${color.bold("You")}\n${sanitizeTerminalText(value)}\n`);
 
   try {
     for await (const event of agent.run(value, {
       signal: taskController.signal,
       workspace,
+      requestApproval,
     })) {
       if (exiting) continue;
       if (
@@ -85,9 +104,10 @@ async function processLine(line: string): Promise<void> {
   } catch (error) {
     if (!taskController.signal.aborted) {
       const message = error instanceof Error ? error.message : String(error);
-      console.log(color.error(`错误：${message}`));
+      console.log(color.error(`错误：${sanitizeTerminalText(message)}`));
     }
   } finally {
+    settleApproval("denied");
     if (controller === taskController) controller = null;
     if (!exiting) printPrompt();
   }
@@ -109,16 +129,17 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
       return true;
     case "cancel":
       if (controller) {
+        settleApproval("denied");
         controller.abort(new Error("用户取消任务"));
         return false;
       }
       console.log(color.muted("当前没有正在运行的任务。"));
       return true;
     case "model":
-      console.log(`当前模型：${agent.modelName} (${agent.mode})`);
+      console.log(`当前模型：${sanitizeTerminalText(agent.modelName)} (${sanitizeTerminalText(agent.mode)})`);
       return true;
     case "workspace":
-      console.log(`当前工作区：${workspace}`);
+      console.log(`当前工作区：${sanitizeTerminalText(workspace)}`);
       return true;
     case "plan":
       printPlan(agent.getState().plan);
@@ -127,40 +148,129 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
       printContextSummary(agent.getState().context);
       return true;
     case "scan":
-      if (controller) {
-        console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
-        return false;
-      }
-      const scanController = new AbortController();
-      controller = scanController;
-      console.log(color.brand("\n● 重新扫描当前项目"));
-      try {
-        const project = await agent.scan({
-          signal: scanController.signal,
-          workspace,
-        });
-        if (!exiting) printProjectScan(project);
-      } catch (error) {
-        if (!scanController.signal.aborted) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.log(color.error(`扫描失败：${message}`));
-        }
-      } finally {
-        if (controller === scanController) controller = null;
-      }
-      return true;
+      return runScan();
+    case "undo":
+      return runUndo();
     case "exit":
       shutdown();
       return false;
     case "unknown":
-      console.log(color.warning(`未知命令：/${command.value}`));
+      console.log(color.warning(`未知命令：/${sanitizeTerminalText(command.value)}`));
       return true;
   }
+}
+
+async function runScan(): Promise<boolean> {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+  const scanController = new AbortController();
+  controller = scanController;
+  console.log(color.brand("\n● 重新扫描当前项目"));
+  try {
+    const project = await agent.scan({
+      signal: scanController.signal,
+      workspace,
+    });
+    if (!exiting) printProjectScan(project);
+  } catch (error) {
+    if (!scanController.signal.aborted) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(color.error(`扫描失败：${sanitizeTerminalText(message)}`));
+    }
+  } finally {
+    if (controller === scanController) controller = null;
+  }
+  return true;
+}
+
+async function runUndo(): Promise<boolean> {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+  const undoController = new AbortController();
+  controller = undoController;
+  console.log(color.brand("\n● 准备撤销最近一次任务修改"));
+  try {
+    const result = await agent.undo({
+      signal: undoController.signal,
+      workspace,
+      requestApproval,
+    });
+    console.log(
+      result.undone
+        ? color.success(`✓ ${sanitizeTerminalText(result.summary)}：${sanitizeTerminalText(result.restoredFiles.join("、"))}`)
+        : color.muted(sanitizeTerminalText(result.summary)),
+    );
+  } catch (error) {
+    if (!undoController.signal.aborted) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(color.error(`撤销失败：${sanitizeTerminalText(message)}`));
+    }
+  } finally {
+    settleApproval("denied");
+    if (controller === undoController) controller = null;
+  }
+  return true;
+}
+
+const requestApproval: ApprovalHandler = async (request, signal) => {
+  if (exiting || signal.aborted) return "denied";
+  if (pendingApproval) throw new Error("已有操作正在等待确认");
+
+  printApprovalRequest(request);
+  process.stdout.write(color.warning("允许执行此操作？输入 y 确认，其他输入拒绝 [y/N]: "));
+
+  return new Promise<ApprovalDecision>((resolveDecision) => {
+    const onAbort = (): void => settleApproval("denied");
+    signal.addEventListener("abort", onAbort, { once: true });
+    pendingApproval = {
+      id: request.id,
+      resolve: (decision) => {
+        signal.removeEventListener("abort", onAbort);
+        resolveDecision(decision);
+      },
+    };
+  });
+};
+
+function handleApprovalAnswer(value: string): void {
+  const normalized = value.toLowerCase();
+  if (normalized === "y" || normalized === "yes") {
+    console.log(color.success("已授权，继续执行。"));
+    settleApproval("approved");
+    return;
+  }
+
+  if (normalized === "/exit") {
+    settleApproval("denied");
+    shutdown();
+    return;
+  }
+
+  if (normalized === "/cancel") {
+    settleApproval("denied");
+    controller?.abort(new Error("用户取消任务"));
+    return;
+  }
+
+  console.log(color.warning("已拒绝，文件不会被修改。"));
+  settleApproval("denied");
+}
+
+function settleApproval(decision: ApprovalDecision): void {
+  const pending = pendingApproval;
+  if (!pending) return;
+  pendingApproval = null;
+  pending.resolve(decision);
 }
 
 function shutdown(): void {
   if (exiting) return;
   exiting = true;
+  settleApproval("denied");
   controller?.abort(new Error("程序退出"));
   console.log(color.muted("\n已退出 CodeMuse。"));
   readline.close();

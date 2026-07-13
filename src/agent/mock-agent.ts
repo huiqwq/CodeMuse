@@ -5,22 +5,30 @@ import {
 } from "../context/context-selector.ts";
 import { scanProject } from "../context/project-scanner.ts";
 import { openWorkspace } from "../context/workspace.ts";
+import { createCodingToolRegistry } from "../tools/create-coding-tools.ts";
 import type {
   AgentEvent,
   AgentRunOptions,
   AgentRunner,
   AgentSessionState,
   ProjectScan,
+  UndoResult,
 } from "../types.ts";
+import type { ToolRegistry } from "../tools/registry.ts";
 
 export class MockAgent implements AgentRunner {
   readonly mode = "mock" as const;
-  readonly modelName = "Mock（智能上下文演示）";
+  readonly modelName = "Mock（安全修改流程演示）";
   private readonly state = new AgentStateStore();
   private readonly contextTokenBudget: number;
+  private readonly tools: ToolRegistry;
 
-  constructor(contextTokenBudget = 6_000) {
+  constructor(
+    contextTokenBudget = 6_000,
+    tools: ToolRegistry = createCodingToolRegistry(),
+  ) {
     this.contextTokenBudget = contextTokenBudget;
+    this.tools = tools;
   }
 
   async scan(options: AgentRunOptions): Promise<ProjectScan> {
@@ -29,6 +37,15 @@ export class MockAgent implements AgentRunner {
     this.state.clear();
     this.state.setProject(project);
     return project;
+  }
+
+  async undo(options: AgentRunOptions): Promise<UndoResult> {
+    const workspace = await openWorkspace(options.workspace);
+    return this.tools.undoLatest(
+      workspace,
+      options.signal,
+      options.requestApproval,
+    );
   }
 
   getState(): AgentSessionState {
@@ -81,13 +98,13 @@ export class MockAgent implements AgentRunner {
       };
 
       this.state.setStep("analyze", "running");
-      yield { type: "step-start", id: "analyze", title: "执行本地智能上下文演示" };
+      yield { type: "step-start", id: "analyze", title: "执行本地安全流程演示" };
       if (options.signal.aborted) throw options.signal.reason;
       this.state.setStep("analyze", "completed");
       yield {
         type: "step-complete",
         id: "analyze",
-        result: "已根据路径与内容相关性整理证据",
+        result: "已整理上下文和安全写入边界",
       };
 
       this.state.setStep("respond", "running");
@@ -104,8 +121,8 @@ export class MockAgent implements AgentRunner {
         selection.summary.truncated
           ? `另有 ${selection.summary.omittedFiles} 个候选文件未放入上下文，避免发送整个项目。`
           : "候选上下文未发生裁剪。",
-        "当前为 Mock 模式，不进行模型推理；上述扫描、读取、排序和 Token 控制均为真实本地操作。",
-        "配置 CODEMUSE_API_KEY 后，精选代码片段会交给 DeepSeek、GLM 或兼容模型继续分析。",
+        "当前为 Mock 模式，不进行模型推理，也不会自动生成或写入补丁。",
+        "配置真实模型后，Agent 可提出唯一局部补丁；每次写入都必须先展示 Diff 并获得你的明确确认。",
       ].join("\n");
 
       for (let offset = 0; offset < content.length; offset += 16) {
@@ -115,7 +132,7 @@ export class MockAgent implements AgentRunner {
       }
       yield { type: "message-complete" };
       this.state.setStep("respond", "completed");
-      yield { type: "complete", summary: "Mock 任务规划与上下文选择完成" };
+      yield { type: "complete", summary: "Mock 任务规划与安全修改流程演示完成" };
     } catch (error) {
       if (options.signal.aborted) {
         this.state.failRunningSteps("cancelled");

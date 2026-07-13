@@ -44,6 +44,7 @@ const MAX_SEARCH_FILE_BYTES = 512_000;
 const MAX_FILES_SCANNED = 1_500;
 
 export class SearchCodeTool implements AgentTool<SearchCodeInput, SearchCodeOutput> {
+  readonly risk = "read" as const;
   readonly definition = {
     type: "function" as const,
     function: {

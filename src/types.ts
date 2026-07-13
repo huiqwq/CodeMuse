@@ -49,6 +49,29 @@ export type AgentSessionState = {
   context: ContextSummary | null;
 };
 
+export type ApprovalDecision = "approved" | "denied";
+
+export type ApprovalRequest = {
+  id: string;
+  kind: "write" | "undo";
+  title: string;
+  summary: string;
+  paths: string[];
+  diff: string;
+};
+
+export type ApprovalHandler = (
+  request: ApprovalRequest,
+  signal: AbortSignal,
+) => Promise<ApprovalDecision>;
+
+export type UndoResult = {
+  undone: boolean;
+  task: string;
+  restoredFiles: string[];
+  summary: string;
+};
+
 export type ToolCall = {
   id: string;
   name: string;
@@ -95,6 +118,7 @@ export type AgentEvent =
 export type AgentRunOptions = {
   signal: AbortSignal;
   workspace: string;
+  requestApproval?: ApprovalHandler;
 };
 
 export interface AgentRunner {
@@ -102,6 +126,7 @@ export interface AgentRunner {
   readonly modelName: string;
   run(task: string, options: AgentRunOptions): AsyncGenerator<AgentEvent>;
   scan(options: AgentRunOptions): Promise<ProjectScan>;
+  undo(options: AgentRunOptions): Promise<UndoResult>;
   getState(): AgentSessionState;
   clearState(): void;
 }

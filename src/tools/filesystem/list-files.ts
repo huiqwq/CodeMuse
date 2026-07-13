@@ -26,6 +26,7 @@ export type ListFilesOutput = {
 const MAX_ENTRIES = 500;
 
 export class ListFilesTool implements AgentTool<ListFilesInput, ListFilesOutput> {
+  readonly risk = "read" as const;
   readonly definition = {
     type: "function" as const,
     function: {

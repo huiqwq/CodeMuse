@@ -7,6 +7,7 @@ export type SlashCommand =
   | { name: "plan" }
   | { name: "context" }
   | { name: "scan" }
+  | { name: "undo" }
   | { name: "exit" }
   | { name: "unknown"; value: string };
 
@@ -24,6 +25,7 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     case "plan":
     case "context":
     case "scan":
+    case "undo":
     case "exit":
       return { name };
     default:
@@ -38,6 +40,7 @@ export const HELP_TEXT = `可用命令
   /plan       查看最近一次任务计划
   /context    查看最近一次上下文选择
   /scan       重新扫描当前项目
+  /undo       撤销当前会话最近一次任务修改
   /clear      清空终端和当前任务状态
   /cancel     取消当前任务
   /exit       退出 CodeMuse`;

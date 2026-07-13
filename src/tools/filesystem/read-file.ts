@@ -25,6 +25,7 @@ const MAX_FILE_BYTES = 1_000_000;
 const MAX_LINES = 200;
 
 export class ReadFileTool implements AgentTool<ReadFileInput, ReadFileOutput> {
+  readonly risk = "read" as const;
   readonly definition = {
     type: "function" as const,
     function: {

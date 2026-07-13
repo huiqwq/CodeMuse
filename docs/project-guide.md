@@ -1,5 +1,7 @@
 # CodeMuse 项目总纲与开发操作指南
 
+> 当前实施版本：v0.2.0 只读代码库分析 Agent。具体变化见 [releases/v0.2.0.md](releases/v0.2.0.md)。
+
 ## 1. 项目定位
 
 CodeMuse 是一款终端智能编程助手，支持通过自然语言完成代码库分析、任务规划、代码生成与修改、Shell 命令执行、构建测试、错误修复和 Diff 审查。系统提供流式终端交互、操作权限控制、项目上下文管理及会话恢复功能，形成从需求理解到代码验证的自动化开发闭环。
@@ -230,6 +232,29 @@ where.exe node
 当前要求 Node.js 22.18 或更高版本。
 
 ### 7.2 启动 CodeMuse
+
+首次使用先在源码目录注册全局命令：
+
+```powershell
+cd "C:\Users\Administrator\Documents\Codex\2026-07-13\u-an\CodeMuse"
+npm install
+npm link
+where.exe codemuse
+```
+
+以后分析当前目录：
+
+```powershell
+codemuse .
+```
+
+分析指定项目：
+
+```powershell
+codemuse "D:\projects\my-app"
+```
+
+不注册全局命令时，可以直接从源码启动：
 
 ```powershell
 cd "C:\Users\Administrator\Documents\Codex\2026-07-13\u-an\CodeMuse"

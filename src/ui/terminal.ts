@@ -6,12 +6,12 @@ export function printHeader(workspace: string, model: string, mode: string): voi
   const rule = "─".repeat(Math.max(36, width));
 
   console.log();
-  console.log(color.bold(color.brand("  CodeMuse  v0.1.0")));
+  console.log(color.bold(color.brand("  CodeMuse  v0.2.0")));
   console.log(`  ${color.muted("Workspace")}  ${workspace}`);
   console.log(`  ${color.muted("Model")}      ${model}`);
   console.log(`  ${color.muted("Mode")}       ${mode}`);
   console.log(color.muted(rule));
-  console.log(color.muted("  输入任务开始对话，输入 /help 查看命令。"));
+  console.log(color.muted("  输入代码库分析任务，输入 /help 查看命令。"));
   console.log();
 }
 
@@ -38,6 +38,15 @@ export function handleAgentEvent(event: AgentEvent): void {
       break;
     case "step-failed":
       console.log(color.error(`✗ ${event.error}`));
+      break;
+    case "tool-start":
+      console.log(color.brand(`  → ${event.name}  ${event.summary}`));
+      break;
+    case "tool-complete":
+      console.log(color.success(`  ✓ ${event.name}  ${event.summary}`));
+      break;
+    case "tool-failed":
+      console.log(color.error(`  ✗ ${event.name}  ${event.error}`));
       break;
     case "notice":
       console.log(color.warning(event.message));

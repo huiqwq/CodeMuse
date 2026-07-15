@@ -6,6 +6,7 @@ import "./context-management.test.ts";
 import "./patch-tools.test.ts";
 import "./script-tools.test.ts";
 import "./repair-loop.test.ts";
+import "./session-store.test.ts";
 import "./agent-patch-loop.test.ts";
 import "./agent-loop.test.ts";
 import "./compatible-provider.test.ts";

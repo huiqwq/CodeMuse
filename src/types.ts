@@ -116,10 +116,20 @@ export type AgentEvent =
   | { type: "error"; message: string }
   | { type: "complete"; summary?: string };
 
+export type AgentResumeContext = {
+  sessionId: string;
+  createdAt: string;
+  priorTask: string;
+  status: "completed" | "failed" | "cancelled" | "stopped";
+  summary: string | null;
+  priorPlan: PlanStep[];
+  recentActivities: string[];
+};
 export type AgentRunOptions = {
   signal: AbortSignal;
   workspace: string;
   requestApproval?: ApprovalHandler;
+  resume?: AgentResumeContext;
 };
 
 export interface AgentRunner {
@@ -129,6 +139,7 @@ export interface AgentRunner {
   scan(options: AgentRunOptions): Promise<ProjectScan>;
   undo(options: AgentRunOptions): Promise<UndoResult>;
   getState(): AgentSessionState;
+  restoreState(state: AgentSessionState): void;
   clearState(): void;
 }
 

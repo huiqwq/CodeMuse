@@ -18,7 +18,7 @@ import type { ToolRegistry } from "../tools/registry.ts";
 
 export class MockAgent implements AgentRunner {
   readonly mode = "mock" as const;
-  readonly modelName = "Mock（自动修复流程演示）";
+  readonly modelName = "Mock（会话与恢复演示）";
   private readonly state = new AgentStateStore();
   private readonly contextTokenBudget: number;
   private readonly tools: ToolRegistry;
@@ -50,6 +50,10 @@ export class MockAgent implements AgentRunner {
 
   getState(): AgentSessionState {
     return this.state.snapshot();
+  }
+
+  restoreState(state: AgentSessionState): void {
+    this.state.restore(state);
   }
 
   clearState(): void {
@@ -112,6 +116,9 @@ export class MockAgent implements AgentRunner {
       const selectedPaths = selection.summary.files.map((file) => file.path);
       const content = [
         `已收到任务：“${task}”。`,
+        ...(options.resume
+          ? [`已恢复会话 ${options.resume.sessionId}：${options.resume.priorTask}`]
+          : []),
         "",
         formatProjectSummary(project),
         "",
@@ -132,7 +139,7 @@ export class MockAgent implements AgentRunner {
       }
       yield { type: "message-complete" };
       this.state.setStep("respond", "completed");
-      yield { type: "complete", summary: "Mock 任务规划与自动修复边界演示完成" };
+      yield { type: "complete", summary: "Mock 任务规划与会话恢复边界演示完成" };
     } catch (error) {
       if (options.signal.aborted) {
         this.state.failRunningSteps("cancelled");

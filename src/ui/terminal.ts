@@ -6,13 +6,17 @@ import type {
   TaskPlan,
 } from "../types.ts";
 import { color } from "./colors.ts";
+import type {
+  SessionHistoryItem,
+  StoredSession,
+} from "../sessions/types.ts";
 
 export function printHeader(workspace: string, model: string, mode: string): void {
   const width = Math.min(process.stdout.columns || 72, 88);
   const rule = "─".repeat(Math.max(36, width));
 
   console.log();
-  console.log(color.bold(color.brand("  CodeMuse  v0.6.0")));
+  console.log(color.bold(color.brand("  CodeMuse  v0.7.0")));
   console.log(`  ${color.muted("Workspace")}  ${sanitizeTerminalText(workspace)}`);
   console.log(`  ${color.muted("Model")}      ${sanitizeTerminalText(model)}`);
   console.log(`  ${color.muted("Mode")}       ${sanitizeTerminalText(mode)}`);
@@ -151,6 +155,60 @@ export function handleAgentEvent(event: AgentEvent): void {
   }
 }
 
+export function printSessionHistory(
+  sessions: SessionHistoryItem[],
+): void {
+  console.log(color.bold("\n会话历史"));
+  if (!sessions.length) {
+    console.log(color.muted("  当前工作区还没有历史会话。"));
+    console.log();
+    return;
+  }
+
+  for (const session of sessions) {
+    const id = session.id.slice(0, 8);
+    const time = formatSessionTime(session.createdAt);
+    console.log(
+      `  ${color.brand(id)}  ${statusLabel(session.status)}  ${sanitizeTerminalText(time)}`,
+    );
+    console.log(`    ${sanitizeTerminalText(session.task)}`);
+  }
+  console.log(color.muted("  使用 /resume <ID> 恢复；省略 ID 时恢复最新会话。"));
+  console.log();
+}
+
+export function printSessionRestored(session: StoredSession): void {
+  console.log(color.success(
+    `\n✓ 已恢复会话 ${session.id.slice(0, 8)}`,
+  ));
+  console.log(`  原任务  ${sanitizeTerminalText(session.task)}`);
+  console.log(`  状态    ${statusLabel(session.status)}`);
+  console.log(
+    `  摘要    ${sanitizeTerminalText(session.summary ?? "无")}`,
+  );
+  console.log(color.muted("  旧计划和上下文已载入；下一条自然语言任务会继承此会话摘要。"));
+  console.log();
+}
+
+function statusLabel(status: SessionHistoryItem["status"]): string {
+  switch (status) {
+    case "completed":
+      return color.success("已完成");
+    case "failed":
+      return color.error("失败");
+    case "cancelled":
+      return color.warning("已取消");
+    case "stopped":
+      return color.warning("已停止");
+  }
+}
+
+function formatSessionTime(value: string): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleString("zh-CN", { hour12: false })
+    : value;
+}
 function statusSymbol(status: TaskPlan["steps"][number]["status"]): string {
   switch (status) {
     case "pending":

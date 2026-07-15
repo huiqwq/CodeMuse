@@ -40,6 +40,10 @@ export class AgentStateStore {
     return structuredClone(this.state);
   }
 
+  restore(state: AgentSessionState): void {
+    this.state = structuredClone(state);
+  }
+
   clear(): void {
     this.state = emptyState();
   }

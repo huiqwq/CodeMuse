@@ -17,10 +17,18 @@ import {
   printPlan,
   printProjectScan,
   printPrompt,
+  printSessionHistory,
+  printSessionRestored,
   sanitizeTerminalText,
 } from "./ui/terminal.ts";
 import { color } from "./ui/colors.ts";
+import { SessionRecorder } from "./sessions/session-recorder.ts";
+import {
+  createAgentResumeContext,
+  SessionStore,
+} from "./sessions/session-store.ts";
 import type {
+  AgentResumeContext,
   ApprovalDecision,
   ApprovalHandler,
 } from "./types.ts";
@@ -33,8 +41,11 @@ type PendingApproval = {
 const args = process.argv.slice(2);
 const workspace = resolve(args.find((arg) => !arg.startsWith("-")) || ".");
 const agent = createAgent();
+const sessionStore = new SessionStore(workspace);
 const readline = createInterface({ input, output, terminal: true });
 let controller: AbortController | null = null;
+let activeSessionRecorder: SessionRecorder | null = null;
+let pendingResume: AgentResumeContext | null = null;
 let pendingApproval: PendingApproval | null = null;
 let exiting = false;
 
@@ -71,7 +82,7 @@ async function processLine(line: string): Promise<void> {
   const command = parseSlashCommand(value);
   if (command) {
     const shouldContinue = await handleCommand(command);
-    if (shouldContinue && !controller) printPrompt();
+    if (shouldContinue && !controller && !exiting) printPrompt();
     return;
   }
 
@@ -82,7 +93,16 @@ async function processLine(line: string): Promise<void> {
   }
 
   const taskController = new AbortController();
+  const recorder = new SessionRecorder(
+    value,
+    agent.modelName,
+    agent.mode,
+    [process.env.CODEMUSE_API_KEY],
+  );
+  const resume = pendingResume;
+  pendingResume = null;
   controller = taskController;
+  activeSessionRecorder = recorder;
   console.log(`\n${color.bold("You")}\n${sanitizeTerminalText(value)}\n`);
 
   try {
@@ -90,7 +110,9 @@ async function processLine(line: string): Promise<void> {
       signal: taskController.signal,
       workspace,
       requestApproval,
+      ...(resume ? { resume } : {}),
     })) {
+      recorder.recordEvent(event);
       if (exiting) continue;
       if (
         taskController.signal.aborted &&
@@ -102,6 +124,7 @@ async function processLine(line: string): Promise<void> {
       handleAgentEvent(event);
     }
   } catch (error) {
+    recorder.recordUnhandledError(error);
     if (!taskController.signal.aborted) {
       const message = error instanceof Error ? error.message : String(error);
       console.log(color.error(`错误：${sanitizeTerminalText(message)}`));
@@ -109,6 +132,8 @@ async function processLine(line: string): Promise<void> {
   } finally {
     settleApproval("denied");
     if (controller === taskController) controller = null;
+    if (activeSessionRecorder === recorder) activeSessionRecorder = null;
+    await saveSession(recorder, taskController.signal.aborted);
     if (!exiting) printPrompt();
   }
 }
@@ -124,6 +149,7 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
         return false;
       }
       agent.clearState();
+      pendingResume = null;
       console.clear();
       printHeader(workspace, agent.modelName, agent.mode);
       return true;
@@ -151,6 +177,10 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
       return runScan();
     case "undo":
       return runUndo();
+    case "history":
+      return runHistory();
+    case "resume":
+      return runResume(command.id);
     case "exit":
       shutdown();
       return false;
@@ -216,6 +246,64 @@ async function runUndo(): Promise<boolean> {
   return true;
 }
 
+async function runHistory(): Promise<boolean> {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+  try {
+    const sessions = await sessionStore.list(10);
+    if (!exiting) printSessionHistory(sessions);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(color.error(`读取会话历史失败：${sanitizeTerminalText(message)}`));
+  }
+  return true;
+}
+
+async function runResume(id?: string): Promise<boolean> {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+
+  const resumeController = new AbortController();
+  controller = resumeController;
+  try {
+    const session = await sessionStore.resume(id, resumeController.signal);
+    agent.restoreState(session.state);
+    pendingResume = createAgentResumeContext(session);
+    if (!exiting) printSessionRestored(session);
+  } catch (error) {
+    if (!resumeController.signal.aborted) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(color.error(`恢复会话失败：${sanitizeTerminalText(message)}`));
+    }
+  } finally {
+    if (controller === resumeController) controller = null;
+  }
+  return true;
+}
+
+async function saveSession(
+  recorder: SessionRecorder,
+  wasAborted: boolean,
+): Promise<void> {
+  try {
+    const saved = await sessionStore.save(
+      recorder.toDraft(agent.getState(), wasAborted),
+      new AbortController().signal,
+    );
+    if (!exiting) {
+      console.log(color.muted(`会话已保存：${saved.id.slice(0, 8)}`));
+    }
+  } catch (error) {
+    if (!exiting) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(color.warning(`会话保存失败：${sanitizeTerminalText(message)}`));
+    }
+  }
+}
 const requestApproval: ApprovalHandler = async (request, signal) => {
   if (exiting || signal.aborted) return "denied";
   if (pendingApproval) throw new Error("已有操作正在等待确认");
@@ -226,10 +314,12 @@ const requestApproval: ApprovalHandler = async (request, signal) => {
   return new Promise<ApprovalDecision>((resolveDecision) => {
     const onAbort = (): void => settleApproval("denied");
     signal.addEventListener("abort", onAbort, { once: true });
+    const recorder = activeSessionRecorder;
     pendingApproval = {
       id: request.id,
       resolve: (decision) => {
         signal.removeEventListener("abort", onAbort);
+        recorder?.recordApproval(request, decision);
         resolveDecision(decision);
       },
     };

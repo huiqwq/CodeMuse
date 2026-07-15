@@ -43,7 +43,7 @@ npm run check
 git status
 ```
 
-真实 API Key、`.env`、`node_modules`、个人缓存和编辑器临时文件不得提交。
+真实 API Key、`.env`、`node_modules`、`.codemuse/` 会话、个人缓存和编辑器临时文件不得提交。
 
 ## 版本记录要求
 

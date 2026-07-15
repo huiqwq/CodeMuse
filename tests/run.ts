@@ -1,6 +1,8 @@
 import "./slash-command.test.ts";
 import "./terminal-safety.test.ts";
 import "./model-config.test.ts";
+import "./profile-store.test.ts";
+import "./managed-agent.test.ts";
 import "./read-only-tools.test.ts";
 import "./context-management.test.ts";
 import "./patch-tools.test.ts";

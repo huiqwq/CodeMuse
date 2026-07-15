@@ -18,7 +18,7 @@ import type { ToolRegistry } from "../tools/registry.ts";
 
 export class MockAgent implements AgentRunner {
   readonly mode = "mock" as const;
-  readonly modelName = "Mock（安全文件操作与 Git 审查演示）";
+  readonly modelName: string;
   private readonly state = new AgentStateStore();
   private readonly contextTokenBudget: number;
   private readonly tools: ToolRegistry;
@@ -26,7 +26,9 @@ export class MockAgent implements AgentRunner {
   constructor(
     contextTokenBudget = 6_000,
     tools: ToolRegistry = createCodingToolRegistry(),
+    modelName = "Mock（多模型配置与安全边界演示）",
   ) {
+    this.modelName = modelName;
     this.contextTokenBudget = contextTokenBudget;
     this.tools = tools;
   }
@@ -129,7 +131,7 @@ export class MockAgent implements AgentRunner {
           ? `另有 ${selection.summary.omittedFiles} 个候选文件未放入上下文，避免发送整个项目。`
           : "候选上下文未发生裁剪。",
         "当前为 Mock 模式，不进行模型推理，不会自动生成补丁、执行 npm scripts 或模拟测试通过。",
-        "配置真实模型后，Agent 可在逐项授权下修改、新建、重命名或删除文本文件，并使用只读 Git Status/Diff 汇总变更；不会自动 commit 或 push。",
+        "使用 /model list 查看配置，/model use 切换模型，/model test 发送最小连接测试；真实请求会报告 Token 用量并仅对网络错误、429 和 5xx 有限重试。",
       ].join("\n");
 
       for (let offset = 0; offset < content.length; offset += 16) {
@@ -139,7 +141,7 @@ export class MockAgent implements AgentRunner {
       }
       yield { type: "message-complete" };
       this.state.setStep("respond", "completed");
-      yield { type: "complete", summary: "Mock 安全文件操作与 Git 审查边界演示完成" };
+      yield { type: "complete", summary: "Mock 多模型配置与 API 安全边界演示完成" };
     } catch (error) {
       if (options.signal.aborted) {
         this.state.failRunningSteps("cancelled");

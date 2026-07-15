@@ -1,12 +1,22 @@
 # CodeMuse 架构
 
-## v0.8.0 执行链路
+## v0.9.0 执行链路
 
 ```text
+CLI 启动
+  -> ProfileStore 读取 ~/.codemuse/config.json
+  -> 从独立环境变量解析 API Key
+  -> ManagedAgent 选择 Mock 或 ModelAgent
+  -> /model 可在任务之间切换 Provider
 CLI 自然语言任务
   -> SessionRecorder 创建任务记录
   -> ProjectScanner + TaskPlanner + ContextSelector
   -> ModelAgent
+  -> CompatibleProvider
+       ├─ 30 秒默认超时
+       ├─ 网络错误 / 429 / 指定 5xx 有限重试
+       ├─ 流式文本与 Tool Call
+       └─ Token usage
   -> ToolRegistry
        ├─ list_files / read_file / search_code
        ├─ apply_patch
@@ -37,6 +47,7 @@ src/
 ├─ agent/
 │  ├─ agent-state.ts
 │  ├─ failure-diagnostics.ts
+│  ├─ managed-agent.ts
 │  ├─ model-agent.ts
 │  ├─ mock-agent.ts
 │  ├─ repair-policy.ts
@@ -47,6 +58,9 @@ src/
 │  └─ diff.ts
 ├─ context/
 ├─ models/
+│  ├─ compatible-provider.ts
+│  ├─ config.ts
+│  └─ profile-store.ts
 ├─ sessions/
 ├─ tools/
 │  ├─ filesystem/
@@ -66,6 +80,49 @@ src/
 ├─ commands/
 └─ cli.ts
 ```
+
+## 多模型管理
+
+### ProfileStore
+
+本机配置默认位于 `~/.codemuse/config.json`，也可以用 `CODEMUSE_CONFIG_PATH` 覆盖。文件限制为 128 KB、普通 JSON 文件和 `schemaVersion: 1`，最多 20 个 Profile。
+
+每个 Profile 包含：
+
+```text
+name
+provider
+baseUrl
+model
+apiKeyEnv
+timeoutMs（可选）
+maxRetries（可选）
+```
+
+不允许 `apiKey` 或其他未知字段。ProfileStore 只根据 `apiKeyEnv` 从当前进程环境读取 Key。内置 deepseek、glm、glm-flash、openai 四个模板，其中两个 GLM Profile 共用 ZHIPUAI_API_KEY；自定义兼容服务通过文件增加。旧 `CODEMUSE_API_KEY` 会转换为内存中的 environment Profile。
+
+### ManagedAgent
+
+ManagedAgent 包装 MockAgent/ModelAgent，并持有共享 ToolRegistry：
+
+- `/model use` 只在没有任务运行时调用。
+- 切换前保存 AgentSessionState，创建新 delegate 后恢复。
+- ToolRegistry 不重建，因此最近任务 `/undo` 仍然有效。
+- `/model reload` 重新校验配置文件和当前进程环境变量。
+- `/model test` 使用独立 Provider 发送最小非流式请求。
+- 所有已解析 Key 只用于 Provider 和 SessionRecorder 脱敏列表。
+
+### CompatibleProvider
+
+每个请求使用 Profile 的 `timeoutMs` 和 `maxRetries`。默认超时 30000ms，最多重试 2 次：
+
+- 重试：网络失败、429、500、502、503、504。
+- 不重试：400、401、403 和其他确定性请求错误。
+- 尊重 `Retry-After`，等待最多 5 秒。
+- 只重试尚未返回流式正文的请求，避免重复处理 Tool Call。
+- 错误正文最多保留 300 字符，并替换当前 API Key。
+
+流式请求开启兼容 usage 返回。ModelAgent 把 usage 转换为 `model-usage` 事件，ManagedAgent 按模型累计，CLI 实时显示并由 `/usage` 汇总。
 
 ## 文件生命周期
 
@@ -134,7 +191,7 @@ CLI 为每条自然语言任务创建 SessionRecorder，只保存：
 
 - 工具名称和成功/失败摘要。
 - 授权类型、路径和批准/拒绝结果。
-- notice、error、complete 和最终文件操作摘要。
+- notice、Token usage、error、complete 和最终文件操作摘要。
 - 项目扫描、计划、上下文和工作区检查点。
 
 不保存 ApprovalRequest Diff、完整命令输出、模型逐字回答、原始 Tool Call 参数和明文 API Key。任务结束后保存到 `.codemuse/sessions/`，最多 50 条。
@@ -176,12 +233,14 @@ FailureDiagnostics 负责错误分类、源码位置和失败指纹。RepairPoli
 - 不执行任意 Shell、不自动 npm install。
 - Git 能力只读，不自动 commit 或 push。
 - `.codemuse` 不进入项目扫描、模型上下文或 Git Diff。
-- API Key 不进入工具子进程和会话。
+- API Key 不进入工具子进程、Profile JSON、终端列表和会话。
+- 本机 Profile 只保存 API Key 环境变量名。
+- 连接测试最多请求生成 1 Token，但仍是真实 API 调用。
+- Token 用量来自供应商 usage，只用于本地显示和有限会话摘要。
 - 恢复文本和项目代码都视为不可信内容，不能覆盖系统提示。
 
 ## 后续架构扩展
 
-- v0.9.0：Provider 配置、连接测试、模型切换、重试与 Token 统计。
 - v0.10.0：npm 发布入口、首次配置、诊断和跨平台适配。
 - v0.11.0：端到端安全、兼容性和性能验收。
 - v1.0.0：稳定连接分析、修改、验证、修复、Git 审查与会话恢复。

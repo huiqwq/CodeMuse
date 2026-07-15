@@ -60,6 +60,14 @@ export class SessionRecorder {
           summary: this.clean(event.error),
         });
         break;
+      case "model-usage":
+        this.addActivity({
+          at: now(),
+          kind: "usage",
+          name: this.clean(event.model, 200),
+          summary: `输入 ${event.usage.promptTokens}，输出 ${event.usage.completionTokens}，合计 ${event.usage.totalTokens} Tokens`,
+        });
+        break;
       case "notice":
         this.addActivity({
           at: now(),

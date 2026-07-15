@@ -174,6 +174,14 @@ export class ModelAgent implements AgentRunner {
             }
             content += event.content;
             yield { type: "message-delta", content: event.content };
+          } else if (event.type === "provider-notice") {
+            yield { type: "notice", message: event.message };
+          } else if (event.type === "usage") {
+            yield {
+              type: "model-usage",
+              model: this.modelName,
+              usage: event.usage,
+            };
           } else if (event.type === "tool-call-delta") {
             const current = calls.get(event.index) ?? {
               id: `tool-${turn}-${event.index}`,

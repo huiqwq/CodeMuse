@@ -43,6 +43,15 @@ test("SessionRecorder 清除 API Key 且不保存 Diff 和命令输出", () => {
     type: "command-output",
     content: `Authorization: Bearer ${secret}`,
   });
+  recorder.recordEvent({
+    type: "model-usage",
+    model: "fake/model",
+    usage: {
+      promptTokens: 10,
+      completionTokens: 2,
+      totalTokens: 12,
+    },
+  });
   recorder.recordEvent({ type: "complete", summary: "任务完成" });
 
   const state = emptyState();
@@ -59,6 +68,8 @@ test("SessionRecorder 清除 API Key 且不保存 Diff 和命令输出", () => {
   assert.doesNotMatch(serialized, /const key/);
   assert.doesNotMatch(serialized, /Authorization/);
   assert.match(serialized, /\[REDACTED\]/);
+  assert.match(serialized, /"kind":"usage"/);
+  assert.match(serialized, /合计 12 Tokens/);
 });
 
 test("SessionStore 保存、列出并恢复未变化的工作区", async () => {

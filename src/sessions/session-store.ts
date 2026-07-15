@@ -372,7 +372,7 @@ function isSessionActivity(value: unknown): value is SessionActivity {
   return isRecord(value) &&
     isIsoDate(value.at) &&
     typeof value.kind === "string" &&
-    ["tool", "approval", "notice", "error", "complete"].includes(value.kind) &&
+    ["tool", "approval", "notice", "usage", "error", "complete"].includes(value.kind) &&
     (value.name === undefined || typeof value.name === "string") &&
     (value.status === undefined || typeof value.status === "string") &&
     typeof value.summary === "string" && value.summary.length <= 2_000 &&

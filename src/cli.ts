@@ -13,12 +13,15 @@ import {
   handleAgentEvent,
   printApprovalRequest,
   printContextSummary,
+  printConnectionResult,
   printHeader,
+  printModelProfiles,
   printPlan,
   printProjectScan,
   printPrompt,
   printSessionHistory,
   printSessionRestored,
+  printUsage,
   sanitizeTerminalText,
 } from "./ui/terminal.ts";
 import { color } from "./ui/colors.ts";
@@ -40,7 +43,7 @@ type PendingApproval = {
 
 const args = process.argv.slice(2);
 const workspace = resolve(args.find((arg) => !arg.startsWith("-")) || ".");
-const agent = createAgent();
+const agent = await createAgent();
 const sessionStore = new SessionStore(workspace);
 const readline = createInterface({ input, output, terminal: true });
 let controller: AbortController | null = null;
@@ -97,7 +100,7 @@ async function processLine(line: string): Promise<void> {
     value,
     agent.modelName,
     agent.mode,
-    [process.env.CODEMUSE_API_KEY],
+    [...agent.getSecrets(), process.env.CODEMUSE_API_KEY],
   );
   const resume = pendingResume;
   pendingResume = null;
@@ -162,7 +165,9 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
       console.log(color.muted("当前没有正在运行的任务。"));
       return true;
     case "model":
-      console.log(`当前模型：${sanitizeTerminalText(agent.modelName)} (${sanitizeTerminalText(agent.mode)})`);
+      return runModelCommand(command);
+    case "usage":
+      printUsage(agent.getUsage());
       return true;
     case "workspace":
       console.log(`当前工作区：${sanitizeTerminalText(workspace)}`);
@@ -190,6 +195,85 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
   }
 }
 
+async function runModelCommand(
+  command: Extract<SlashCommand, { name: "model" }>,
+): Promise<boolean> {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+
+  try {
+    switch (command.action) {
+      case "show":
+      case "list":
+        printModelProfiles(agent.listProfiles(), agent.configPath);
+        return true;
+      case "use": {
+        if (!command.value) {
+          console.log(color.warning("用法：/model use <NAME>"));
+          return true;
+        }
+        const result = agent.switchProfile(command.value);
+        console.log(
+          color.success(
+            `✓ ${sanitizeTerminalText(result.message)}：${sanitizeTerminalText(result.modelName)} (${result.mode})`,
+          ),
+        );
+        return true;
+      }
+      case "test":
+        return runModelTest(command.value);
+      case "init": {
+        const result = await agent.initializeConfig();
+        console.log(
+          result.created
+            ? color.success(`✓ 已创建本机模型配置：${sanitizeTerminalText(result.path)}`)
+            : color.muted(`模型配置已存在：${sanitizeTerminalText(result.path)}`),
+        );
+        printModelProfiles(agent.listProfiles(), agent.configPath);
+        return true;
+      }
+      case "reload": {
+        const result = await agent.reloadProfiles();
+        console.log(color.success(`✓ ${sanitizeTerminalText(result.message)}`));
+        printModelProfiles(agent.listProfiles(), agent.configPath);
+        return true;
+      }
+      case "unknown":
+        console.log(
+          color.warning(
+            `未知 /model 操作：${sanitizeTerminalText(command.value || "")}`,
+          ),
+        );
+        return true;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(color.error(`模型操作失败：${sanitizeTerminalText(message)}`));
+    return true;
+  }
+}
+
+async function runModelTest(profile?: string): Promise<boolean> {
+  const testController = new AbortController();
+  controller = testController;
+  console.log(color.brand("\n● 测试模型 API 连接"));
+  try {
+    const result = await agent.testConnection(profile, testController.signal);
+    if (!exiting && !testController.signal.aborted) {
+      printConnectionResult(result);
+    }
+  } catch (error) {
+    if (!testController.signal.aborted) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(color.error(`模型连接测试失败：${sanitizeTerminalText(message)}`));
+    }
+  } finally {
+    if (controller === testController) controller = null;
+  }
+  return true;
+}
 async function runScan(): Promise<boolean> {
   if (controller) {
     console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));

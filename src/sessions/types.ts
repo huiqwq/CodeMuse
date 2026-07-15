@@ -8,7 +8,7 @@ export type SessionStatus =
 
 export type SessionActivity = {
   at: string;
-  kind: "tool" | "approval" | "notice" | "error" | "complete";
+  kind: "tool" | "approval" | "notice" | "usage" | "error" | "complete";
   name?: string;
   status?: string;
   summary: string;

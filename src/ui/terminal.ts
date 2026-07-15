@@ -10,13 +10,18 @@ import type {
   SessionHistoryItem,
   StoredSession,
 } from "../sessions/types.ts";
+import type {
+  ManagedConnectionResult,
+  ModelProfileSummary,
+  UsageSummary,
+} from "../agent/managed-agent.ts";
 
 export function printHeader(workspace: string, model: string, mode: string): void {
   const width = Math.min(process.stdout.columns || 72, 88);
   const rule = "─".repeat(Math.max(36, width));
 
   console.log();
-  console.log(color.bold(color.brand("  CodeMuse  v0.8.0")));
+  console.log(color.bold(color.brand("  CodeMuse  v0.9.0")));
   console.log(`  ${color.muted("Workspace")}  ${sanitizeTerminalText(workspace)}`);
   console.log(`  ${color.muted("Model")}      ${sanitizeTerminalText(model)}`);
   console.log(`  ${color.muted("Mode")}       ${sanitizeTerminalText(mode)}`);
@@ -128,6 +133,13 @@ export function handleAgentEvent(event: AgentEvent): void {
     case "context-selected":
       printContextSummary(event.context);
       break;
+    case "model-usage":
+      console.log(
+        color.muted(
+          `  Token  ${sanitizeTerminalText(event.model)}：输入 ${event.usage.promptTokens}，输出 ${event.usage.completionTokens}，合计 ${event.usage.totalTokens}`,
+        ),
+      );
+      break;
     case "tool-start":
       console.log(color.brand(`  → ${sanitizeTerminalText(event.name)}  ${sanitizeTerminalText(event.summary)}`));
       break;
@@ -155,6 +167,60 @@ export function handleAgentEvent(event: AgentEvent): void {
   }
 }
 
+export function printModelProfiles(
+  profiles: ModelProfileSummary[],
+  configPath: string,
+): void {
+  console.log(color.bold("\n模型 Profile"));
+  console.log(`  配置文件  ${sanitizeTerminalText(configPath)}`);
+  for (const profile of profiles) {
+    const marker = profile.active ? color.success("*") : " ";
+    const state = profile.configured
+      ? color.success("已配置")
+      : color.warning(`缺少 ${profile.apiKeyEnv}`);
+    console.log(
+      `  ${marker} ${color.brand(sanitizeTerminalText(profile.name))}  ${sanitizeTerminalText(profile.provider)}/${sanitizeTerminalText(profile.model)}  ${state}`,
+    );
+  }
+  console.log();
+}
+
+export function printConnectionResult(
+  result: ManagedConnectionResult,
+): void {
+  const status = result.success ? color.success("成功") : color.error("失败");
+  console.log(color.bold("\n模型连接测试"));
+  console.log(`  Profile  ${sanitizeTerminalText(result.profile)}`);
+  console.log(`  Model    ${sanitizeTerminalText(result.provider)}/${sanitizeTerminalText(result.model)}`);
+  console.log(`  状态     ${status}`);
+  console.log(`  耗时     ${result.latencyMs}ms`);
+  console.log(`  尝试     ${result.attempts || "-"}`);
+  console.log(`  结果     ${sanitizeTerminalText(result.message)}`);
+  if (result.usage) {
+    console.log(`  Token    ${result.usage.totalTokens}`);
+  }
+  console.log();
+}
+
+export function printUsage(usage: UsageSummary): void {
+  console.log(color.bold("\nToken 用量（当前 CodeMuse 进程）"));
+  if (!usage.byModel.length) {
+    console.log(color.muted("  尚未收到模型 API 返回的 Token 统计。"));
+    console.log();
+    return;
+  }
+  for (const item of usage.byModel) {
+    console.log(
+      `  ${sanitizeTerminalText(item.model)}  输入 ${item.promptTokens}  输出 ${item.completionTokens}  合计 ${item.totalTokens}`,
+    );
+  }
+  console.log(
+    color.muted(
+      `  总计  输入 ${usage.promptTokens}  输出 ${usage.completionTokens}  合计 ${usage.totalTokens}`,
+    ),
+  );
+  console.log();
+}
 export function printSessionHistory(
   sessions: SessionHistoryItem[],
 ): void {

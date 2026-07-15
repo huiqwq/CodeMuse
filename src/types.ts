@@ -87,8 +87,16 @@ export type ToolDefinition = {
   };
 };
 
+export type ModelUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
 export type ModelStreamEvent =
   | { type: "text-delta"; content: string }
+  | { type: "provider-notice"; message: string }
+  | { type: "usage"; usage: ModelUsage }
   | {
       type: "tool-call-delta";
       index: number;
@@ -108,6 +116,7 @@ export type AgentEvent =
   | { type: "project-scanned"; project: ProjectScan }
   | { type: "plan-updated"; plan: TaskPlan }
   | { type: "context-selected"; context: ContextSummary }
+  | { type: "model-usage"; model: string; usage: ModelUsage }
   | { type: "tool-start"; id: string; name: string; summary: string }
   | { type: "tool-complete"; id: string; name: string; summary: string }
   | { type: "tool-failed"; id: string; name: string; error: string }
@@ -153,6 +162,8 @@ export type ModelConfig = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  timeoutMs?: number;
+  maxRetries?: number;
 };
 
 export interface ModelProvider {

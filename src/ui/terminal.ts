@@ -21,7 +21,7 @@ export function printHeader(workspace: string, model: string, mode: string): voi
   const rule = "─".repeat(Math.max(36, width));
 
   console.log();
-  console.log(color.bold(color.brand("  CodeMuse  v0.9.0")));
+  console.log(color.bold(color.brand("  CodeMuse  v0.10.0")));
   console.log(`  ${color.muted("Workspace")}  ${sanitizeTerminalText(workspace)}`);
   console.log(`  ${color.muted("Model")}      ${sanitizeTerminalText(model)}`);
   console.log(`  ${color.muted("Mode")}       ${sanitizeTerminalText(mode)}`);
@@ -175,9 +175,13 @@ export function printModelProfiles(
   console.log(`  配置文件  ${sanitizeTerminalText(configPath)}`);
   for (const profile of profiles) {
     const marker = profile.active ? color.success("*") : " ";
-    const state = profile.configured
-      ? color.success("已配置")
-      : color.warning(`缺少 ${profile.apiKeyEnv}`);
+    const state = profile.source === "mock"
+      ? color.muted("本地演示")
+      : !profile.configured
+      ? color.warning("缺少 " + profile.apiKeyEnv)
+      : profile.credentialSource === "stored"
+      ? color.success("已安全保存")
+      : color.success("环境变量");
     console.log(
       `  ${marker} ${color.brand(sanitizeTerminalText(profile.name))}  ${sanitizeTerminalText(profile.provider)}/${sanitizeTerminalText(profile.model)}  ${state}`,
     );

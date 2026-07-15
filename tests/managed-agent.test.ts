@@ -188,6 +188,7 @@ function profile(
   return {
     baseUrl: `https://${overrides.provider}.example.test/v1`,
     source: "file",
+    credentialSource: overrides.configured ? "environment" : null,
     ...overrides,
   };
 }

@@ -16,6 +16,7 @@ import {
 import type {
   AgentTool,
   ToolExecutionResult,
+  ToolRisk,
   ToolRuntimeOptions,
 } from "./types.ts";
 
@@ -48,8 +49,10 @@ export class ToolRegistry {
     return this;
   }
 
-  definitions(): ToolDefinition[] {
-    return [...this.tools.values()].map((tool) => tool.definition);
+  definitions(allowedRisks?: readonly ToolRisk[]): ToolDefinition[] {
+    return [...this.tools.values()]
+      .filter((tool) => !allowedRisks || allowedRisks.includes(tool.risk))
+      .map((tool) => tool.definition);
   }
 
   beginTask(workspace: WorkspaceContext, task: string): void {
@@ -86,6 +89,11 @@ export class ToolRegistry {
   ): Promise<ToolExecutionResult> {
     const tool = this.tools.get(call.name);
     if (!tool) throw new Error(`未知工具：${call.name}`);
+    if (runtime.allowedRisks && !runtime.allowedRisks.includes(tool.risk)) {
+      throw new Error(
+        "当前任务策略不允许 " + tool.risk + " 工具：" + call.name,
+      );
+    }
 
     let rawInput: unknown;
     try {

@@ -39,6 +39,16 @@ test("解析规划、上下文、扫描、撤销和会话命令", () => {
     action: "test",
     value: "deepseek",
   });
+  assert.deepEqual(parseSlashCommand("/review"), {
+    name: "review",
+    mode: "report",
+  });
+  assert.deepEqual(parseSlashCommand("/review --fix src/app.ts"), {
+    name: "review",
+    mode: "fix",
+    target: "src/app.ts",
+  });
+  assert.deepEqual(parseSlashCommand("/paste"), { name: "paste" });
   assert.deepEqual(parseSlashCommand("/resume"), { name: "resume" });
   assert.deepEqual(parseSlashCommand("/resume 1234abcd"), {
     name: "resume",

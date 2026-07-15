@@ -25,6 +25,7 @@ export type ToolContext = {
 
 export type ToolRuntimeOptions = {
   requestApproval?: ApprovalHandler;
+  allowedRisks?: readonly ToolRisk[];
 };
 
 export type ToolExecutionResult = {

@@ -1,6 +1,9 @@
 import "./slash-command.test.ts";
 import "./terminal-safety.test.ts";
 import "./model-config.test.ts";
+import "./credential-store.test.ts";
+import "./review-workflow.test.ts";
+import "./review-agent.test.ts";
 import "./profile-store.test.ts";
 import "./managed-agent.test.ts";
 import "./read-only-tools.test.ts";

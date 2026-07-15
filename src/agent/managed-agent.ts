@@ -27,6 +27,7 @@ export type ModelProfileSummary = {
   baseUrl: string;
   apiKeyEnv: string;
   configured: boolean;
+  credentialSource: ResolvedModelProfile["credentialSource"];
   source: ResolvedModelProfile["source"] | "mock";
   active: boolean;
 };
@@ -62,6 +63,7 @@ export type UsageSummary = {
 };
 
 type ProviderFactory = (config: ModelConfig) => CompatibleProvider;
+type CredentialLoader = () => Promise<ReadonlyMap<string, string>>;
 
 export class ManagedAgent implements AgentRunner {
   private catalog: ModelCatalog;
@@ -69,6 +71,7 @@ export class ManagedAgent implements AgentRunner {
   private readonly contextTokenBudget: number;
   private readonly tools: ToolRegistry;
   private readonly providerFactory: ProviderFactory;
+  private readonly credentialLoader: CredentialLoader;
   private delegate: AgentRunner;
   private activeProfileName: string;
   private readonly usage = new Map<string, ModelUsage>();
@@ -79,12 +82,14 @@ export class ManagedAgent implements AgentRunner {
     contextTokenBudget: number,
     tools: ToolRegistry,
     providerFactory: ProviderFactory = (config) => new CompatibleProvider(config),
+    credentialLoader: CredentialLoader = async () => new Map(),
   ) {
     this.catalog = catalog;
     this.env = env;
     this.contextTokenBudget = contextTokenBudget;
     this.tools = tools;
     this.providerFactory = providerFactory;
+    this.credentialLoader = credentialLoader;
     this.activeProfileName = isMockRequested(env)
       ? "mock"
       : catalog.activeProfile;
@@ -143,6 +148,7 @@ export class ManagedAgent implements AgentRunner {
       baseUrl: "local",
       apiKeyEnv: "-",
       configured: true,
+      credentialSource: null,
       source: "mock",
       active: this.activeProfileName === "mock",
     }];
@@ -154,6 +160,7 @@ export class ManagedAgent implements AgentRunner {
         baseUrl: profile.baseUrl,
         apiKeyEnv: profile.apiKeyEnv,
         configured: profile.configured,
+        credentialSource: profile.credentialSource,
         source: profile.source,
         active: this.activeProfileName === profile.name,
       });
@@ -171,7 +178,7 @@ export class ManagedAgent implements AgentRunner {
       if (!profile) throw new Error(`不存在模型 Profile：${profileName}`);
       if (!profile.config) {
         throw new Error(
-          `Profile ${profileName} 未配置 API Key，请设置环境变量 ${profile.apiKeyEnv}`,
+          `Profile ${profileName} 未配置 API Key，请设置环境变量或执行 codemuse auth login ${profile.apiKeyEnv}`,
         );
       }
     }
@@ -190,7 +197,10 @@ export class ManagedAgent implements AgentRunner {
 
   async reloadProfiles(): Promise<ModelSwitchResult> {
     const state = this.delegate.getState();
-    this.catalog = await loadModelCatalog(this.env);
+    this.catalog = await loadModelCatalog(
+      this.env,
+      await this.credentialLoader(),
+    );
     const current = this.activeProfileName;
     const currentAvailable = current === "mock" ||
       this.catalog.profiles.some((profile) =>
@@ -239,7 +249,7 @@ export class ManagedAgent implements AgentRunner {
     if (!profile) throw new Error(`不存在模型 Profile：${profileName}`);
     if (!profile.config) {
       throw new Error(
-        `Profile ${profileName} 未配置 API Key，请设置环境变量 ${profile.apiKeyEnv}`,
+        `Profile ${profileName} 未配置 API Key，请设置环境变量或执行 codemuse auth login ${profile.apiKeyEnv}`,
       );
     }
 
@@ -293,7 +303,7 @@ export class ManagedAgent implements AgentRunner {
       return new MockAgent(
         this.contextTokenBudget,
         this.tools,
-        "Mock（多模型配置与 API 管理演示）",
+        "Mock（安全凭据与代码审查演示）",
       );
     }
     const profile = this.catalog.profiles.find((item) =>

@@ -32,6 +32,7 @@ export type ModelProfileDefinition = {
 
 export type ResolvedModelProfile = ModelProfileDefinition & {
   configured: boolean;
+  credentialSource: "environment" | "stored" | null;
   source: "builtin" | "file" | "environment";
   config: ModelConfig | null;
 };
@@ -91,6 +92,7 @@ export function resolveProfileConfigPath(
 
 export async function loadModelCatalog(
   env: NodeJS.ProcessEnv = process.env,
+  storedCredentials: ReadonlyMap<string, string> = new Map(),
 ): Promise<ModelCatalog> {
   const configPath = resolveProfileConfigPath(env);
   const profileFile = await readProfileFile(configPath);
@@ -130,7 +132,7 @@ export async function loadModelCatalog(
   }
 
   const profiles = [...definitions.values()].map(({ definition, source }) =>
-    resolveProfile(definition, source, env)
+    resolveProfile(definition, source, env, storedCredentials)
   );
   const requested = env.CODEMUSE_PROFILE?.trim() ||
     (legacy ? "environment" : "") ||
@@ -179,11 +181,15 @@ function resolveProfile(
   definition: ModelProfileDefinition,
   source: ResolvedModelProfile["source"],
   env: NodeJS.ProcessEnv,
+  storedCredentials: ReadonlyMap<string, string>,
 ): ResolvedModelProfile {
-  const apiKey = env[definition.apiKeyEnv]?.trim();
+  const environmentKey = env[definition.apiKeyEnv]?.trim();
+  const storedKey = storedCredentials.get(definition.apiKeyEnv)?.trim();
+  const apiKey = environmentKey || storedKey;
   return {
     ...definition,
     configured: Boolean(apiKey),
+    credentialSource: environmentKey ? "environment" : storedKey ? "stored" : null,
     source,
     config: apiKey
       ? {

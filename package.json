@@ -1,6 +1,6 @@
 {
   "name": "codemuse-cli",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "A local, multi-model coding agent for your terminal.",
   "type": "module",
   "private": true,

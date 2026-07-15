@@ -1,13 +1,14 @@
 # CodeMuse 架构
 
-## v0.9.0 执行链路
+## v0.10.0 执行链路
 
 ```text
 CLI 启动
-  -> ProfileStore 读取 ~/.codemuse/config.json
-  -> 从独立环境变量解析 API Key
+  -> CredentialStore 读取 Windows DPAPI 密文
+  -> ProfileStore 合并环境变量和持久凭据
   -> ManagedAgent 选择 Mock 或 ModelAgent
   -> /model 可在任务之间切换 Provider
+  -> /review、/review --fix 和 /paste 选择任务权限
 CLI 自然语言任务
   -> SessionRecorder 创建任务记录
   -> ProjectScanner + TaskPlanner + ContextSelector
@@ -61,6 +62,8 @@ src/
 │  ├─ compatible-provider.ts
 │  ├─ config.ts
 │  └─ profile-store.ts
+├─ credentials/
+├─ review/
 ├─ sessions/
 ├─ tools/
 │  ├─ filesystem/
@@ -99,7 +102,17 @@ timeoutMs（可选）
 maxRetries（可选）
 ```
 
-不允许 `apiKey` 或其他未知字段。ProfileStore 只根据 `apiKeyEnv` 从当前进程环境读取 Key。内置 deepseek、glm、glm-flash、openai 四个模板，其中两个 GLM Profile 共用 ZHIPUAI_API_KEY；自定义兼容服务通过文件增加。旧 `CODEMUSE_API_KEY` 会转换为内存中的 environment Profile。
+不允许明文 apiKey 或其他未知字段。ProfileStore 先读取当前进程环境变量，再读取 CredentialStore 中同名 apiKeyEnv 的解密值。内置 deepseek、glm、glm-flash、openai 四个模板，其中两个 GLM Profile 共用 ZHIPUAI_API_KEY；旧 CODEMUSE_API_KEY 继续映射为 environment Profile。
+
+### CredentialStore
+
+CredentialStore 默认位于用户目录的 .codemuse/credentials.json。Windows 后端使用 DPAPI CurrentUser 加密，文件只保存 schema、后端名称和密文。环境变量优先于持久凭据；未支持平台不降级保存明文。auth 命令按 Profile 的 apiKeyEnv 保存，因此两个 GLM Profile 共享同一凭据。
+
+凭据子进程使用固定 PowerShell 参数、标准输入和有限环境变量，不把 Key 放入参数、日志、会话或普通工具子进程。
+
+### ReviewPolicy
+
+review 报告使用 read-only 工具集合，Registry.definitions 和 Registry.execute 双重检查风险。review --fix 使用 full 策略并沿用已有授权；paste 使用 none 策略和空工作区上下文，防止把用户粘贴片段与本地项目混合。
 
 ### ManagedAgent
 
@@ -233,16 +246,18 @@ FailureDiagnostics 负责错误分类、源码位置和失败指纹。RepairPoli
 - 不执行任意 Shell、不自动 npm install。
 - Git 能力只读，不自动 commit 或 push。
 - `.codemuse` 不进入项目扫描、模型上下文或 Git Diff。
-- API Key 不进入工具子进程、Profile JSON、终端列表和会话。
-- 本机 Profile 只保存 API Key 环境变量名。
+- API Key 不进入普通工具子进程、Profile JSON、终端列表和会话。
+- Windows CredentialStore 只保存 DPAPI 密文；环境变量仍可覆盖。
+- 本机 Profile 只保存凭据标识，不保存明文 Key。
+- paste 任务不扫描项目、不发送本地上下文、不提供工具。
 - 连接测试最多请求生成 1 Token，但仍是真实 API 调用。
 - Token 用量来自供应商 usage，只用于本地显示和有限会话摘要。
 - 恢复文本和项目代码都视为不可信内容，不能覆盖系统提示。
 
 ## 后续架构扩展
 
-- v0.10.0：npm 发布入口、首次配置、诊断和跨平台适配。
-- v0.11.0：端到端安全、兼容性和性能验收。
+- v0.11.0：npm 发布入口、首次配置、诊断和跨平台凭据适配。
+- v0.12.0：端到端安全、兼容性和性能验收。
 - v1.0.0：稳定连接分析、修改、验证、修复、Git 审查与会话恢复。
 
 完整产品范围见 [README](../README.md) 与 [project-guide.md](project-guide.md)。

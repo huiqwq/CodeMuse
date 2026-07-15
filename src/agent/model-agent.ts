@@ -11,6 +11,7 @@ import { openWorkspace } from "../context/workspace.ts";
 import type {
   AgentEvent,
   AgentRunOptions,
+  AgentToolPolicy,
   AgentRunner,
   AgentResumeContext,
   AgentSessionState,
@@ -21,6 +22,7 @@ import type {
   UndoResult,
 } from "../types.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
+import type { ToolRisk } from "../tools/types.ts";
 
 const MAX_MODEL_TURNS = 20;
 
@@ -102,6 +104,7 @@ export class ModelAgent implements AgentRunner {
   ): AsyncGenerator<AgentEvent> {
     this.state.begin(task);
     let taskStarted = false;
+    const allowedRisks = resolveAllowedRisks(options.toolPolicy);
 
     try {
       const workspace = await openWorkspace(options.workspace);
@@ -111,9 +114,27 @@ export class ModelAgent implements AgentRunner {
       const initialPlan = this.state.snapshot().plan;
       if (initialPlan) yield { type: "plan-updated", plan: initialPlan };
 
+      let project: ProjectScan;
+      let selection: ContextSelection;
+      if (options.contextMode === "none") {
+        project = createStandaloneProject();
+        selection = createStandaloneSelection();
+        this.state.setStep("scan", "running");
+        yield { type: "step-start", id: "scan", title: "保护本地工作区" };
+        this.state.setProject(project);
+        this.state.setStep("scan", "completed");
+        yield { type: "project-scanned", project };
+        yield { type: "step-complete", id: "scan", result: "未扫描本地项目" };
+        this.state.setStep("context", "running");
+        yield { type: "step-start", id: "context", title: "隔离粘贴代码片段" };
+        this.state.setContext(selection.summary);
+        this.state.setStep("context", "completed");
+        yield { type: "context-selected", context: selection.summary };
+        yield { type: "step-complete", id: "context", result: "未附加本地代码上下文" };
+      } else {
       this.state.setStep("scan", "running");
       yield { type: "step-start", id: "scan", title: "扫描项目结构与技术栈" };
-      const project = await scanProject(workspace, options.signal);
+      project = await scanProject(workspace, options.signal);
       this.state.setProject(project);
       this.state.setStep("scan", "completed");
       yield { type: "project-scanned", project };
@@ -125,7 +146,7 @@ export class ModelAgent implements AgentRunner {
 
       this.state.setStep("context", "running");
       yield { type: "step-start", id: "context", title: "选择任务相关上下文" };
-      const selection = await selectTaskContext(
+      selection = await selectTaskContext(
         task,
         project,
         workspace,
@@ -140,6 +161,8 @@ export class ModelAgent implements AgentRunner {
         id: "context",
         result: `选择 ${selection.summary.files.length} 个文件，约 ${selection.summary.estimatedTokens} Tokens`,
       };
+
+      }
 
       this.state.setStep("analyze", "running");
       const messages: ChatMessage[] = [
@@ -163,7 +186,7 @@ export class ModelAgent implements AgentRunner {
 
         for await (const event of this.provider.stream(
           messages,
-          finalOnlyReason ? [] : this.tools.definitions(),
+          finalOnlyReason ? [] : this.tools.definitions(allowedRisks),
           options.signal,
         )) {
           if (event.type === "text-delta") {
@@ -272,7 +295,10 @@ export class ModelAgent implements AgentRunner {
               call,
               workspace,
               options.signal,
-              { requestApproval: options.requestApproval },
+              {
+                requestApproval: options.requestApproval,
+                allowedRisks,
+              },
             );
             yield {
               type: "tool-complete",
@@ -377,4 +403,45 @@ function formatResumeContext(resume: AgentResumeContext): string {
 function describeToolCall(call: ToolCall): string {
   const value = call.arguments.trim();
   return value.length <= 120 ? value || "{}" : `${value.slice(0, 120)}...`;
+}
+
+function resolveAllowedRisks(
+  policy: AgentToolPolicy | undefined,
+): readonly ToolRisk[] {
+  switch (policy ?? "full") {
+    case "full":
+      return ["read", "write", "execute"];
+    case "read-only":
+      return ["read"];
+    case "none":
+      return [];
+  }
+}
+
+function createStandaloneProject(): ProjectScan {
+  return {
+    projectName: "pasted-snippet",
+    projectTypes: ["代码片段"],
+    languages: [],
+    frameworks: [],
+    packageManager: null,
+    fileCount: 0,
+    files: [],
+    keyFiles: [],
+    truncated: false,
+  };
+}
+
+function createStandaloneSelection(): ContextSelection {
+  return {
+    summary: {
+      budgetTokens: 0,
+      estimatedTokens: 0,
+      files: [],
+      omittedFiles: 0,
+      truncated: false,
+    },
+    files: [],
+    modelContent: "未读取或附加任何本地工作区文件。",
+  };
 }

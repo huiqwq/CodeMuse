@@ -2,6 +2,34 @@
 
 CodeMuse 的重要版本变化记录在此文件中。每个正式版本还必须在 `docs/releases/` 下提供独立说明文档，记录目标、功能、限制、测试和使用方法。
 
+## [0.10.0] - 2026-07-15
+
+详细说明：[docs/releases/v0.10.0.md](docs/releases/v0.10.0.md)
+
+### Added
+
+- `codemuse auth login/status/logout` 安全凭据命令。
+- Windows DPAPI 当前用户加密凭据存储。
+- `/review [PATH]` 只读代码审查。
+- `/review --fix [PATH]` 确认后修复与验证。
+- `/paste` 多行代码片段审查。
+- 凭据、命令、工具策略和片段隔离自动测试。
+
+### Changed
+
+- 项目版本升级为 `0.10.0`。
+- 模型配置按环境变量、持久凭据的顺序解析。
+- ToolRegistry 支持 full、read-only 和 none 任务权限策略。
+- Mock 模式更新为安全凭据与代码审查边界演示。
+- 自动测试由 63 项增加到 71 项。
+
+### Security
+
+- 凭据文件只保存 DPAPI 密文，不保存明文 API Key。
+- API Key 不进入 DPAPI 子进程参数、环境变量、日志或 Git。
+- 只读审查在工具展示和执行入口双重拒绝写入与执行。
+- 粘贴审查不扫描本地项目、不附加本地代码、不给模型工具。
+- 粘贴完整内容不进入会话历史。
 ## [0.9.0] - 2026-07-15
 
 详细说明：[docs/releases/v0.9.0.md](docs/releases/v0.9.0.md)

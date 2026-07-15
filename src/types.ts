@@ -134,11 +134,16 @@ export type AgentResumeContext = {
   priorPlan: PlanStep[];
   recentActivities: string[];
 };
+export type AgentToolPolicy = "full" | "read-only" | "none";
+export type AgentContextMode = "workspace" | "none";
+
 export type AgentRunOptions = {
   signal: AbortSignal;
   workspace: string;
   requestApproval?: ApprovalHandler;
   resume?: AgentResumeContext;
+  toolPolicy?: AgentToolPolicy;
+  contextMode?: AgentContextMode;
 };
 
 export interface AgentRunner {

@@ -4,6 +4,12 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import { createAgent } from "./agent/create-agent.ts";
+import { runAuthCommand } from "./credentials/auth-command.ts";
+import {
+  buildPastedReviewTask,
+  buildReviewTask,
+  PasteBuffer,
+} from "./review/review-task.ts";
 import {
   HELP_TEXT,
   parseSlashCommand,
@@ -32,6 +38,7 @@ import {
 } from "./sessions/session-store.ts";
 import type {
   AgentResumeContext,
+  AgentRunOptions,
   ApprovalDecision,
   ApprovalHandler,
 } from "./types.ts";
@@ -41,7 +48,18 @@ type PendingApproval = {
   resolve: (decision: ApprovalDecision) => void;
 };
 
+type TaskExecutionOptions = Pick<
+  AgentRunOptions,
+  "toolPolicy" | "contextMode"
+> & {
+  recordedTask?: string;
+  displayTask?: string;
+};
+
 const args = process.argv.slice(2);
+if (args[0]?.toLowerCase() === "auth") {
+  process.exitCode = await runAuthCommand(args.slice(1));
+} else {
 const workspace = resolve(args.find((arg) => !arg.startsWith("-")) || ".");
 const agent = await createAgent();
 const sessionStore = new SessionStore(workspace);
@@ -51,6 +69,7 @@ let activeSessionRecorder: SessionRecorder | null = null;
 let pendingResume: AgentResumeContext | null = null;
 let pendingApproval: PendingApproval | null = null;
 let exiting = false;
+let pasteBuffer: PasteBuffer | null = null;
 
 printHeader(workspace, agent.modelName, agent.mode);
 printPrompt();
@@ -70,6 +89,11 @@ readline.on("close", () => {
 });
 
 async function processLine(line: string): Promise<void> {
+  if (pasteBuffer) {
+    await handlePasteLine(line);
+    return;
+  }
+
   const value = line.trim();
 
   if (pendingApproval) {
@@ -95,9 +119,16 @@ async function processLine(line: string): Promise<void> {
     return;
   }
 
+  await runTask(value);
+}
+
+async function runTask(
+  value: string,
+  taskOptions: TaskExecutionOptions = {},
+): Promise<void> {
   const taskController = new AbortController();
   const recorder = new SessionRecorder(
-    value,
+    taskOptions.recordedTask ?? value,
     agent.modelName,
     agent.mode,
     [...agent.getSecrets(), process.env.CODEMUSE_API_KEY],
@@ -106,7 +137,7 @@ async function processLine(line: string): Promise<void> {
   pendingResume = null;
   controller = taskController;
   activeSessionRecorder = recorder;
-  console.log(`\n${color.bold("You")}\n${sanitizeTerminalText(value)}\n`);
+  console.log(`\n${color.bold("You")}\n${sanitizeTerminalText(taskOptions.displayTask ?? value)}\n`);
 
   try {
     for await (const event of agent.run(value, {
@@ -114,6 +145,12 @@ async function processLine(line: string): Promise<void> {
       workspace,
       requestApproval,
       ...(resume ? { resume } : {}),
+      ...(taskOptions.toolPolicy
+        ? { toolPolicy: taskOptions.toolPolicy }
+        : {}),
+      ...(taskOptions.contextMode
+        ? { contextMode: taskOptions.contextMode }
+        : {}),
     })) {
       recorder.recordEvent(event);
       if (exiting) continue;
@@ -166,6 +203,10 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
       return true;
     case "model":
       return runModelCommand(command);
+    case "review":
+      return runReviewCommand(command);
+    case "paste":
+      return startPaste();
     case "usage":
       printUsage(agent.getUsage());
       return true;
@@ -193,6 +234,94 @@ async function handleCommand(command: SlashCommand): Promise<boolean> {
       console.log(color.warning(`未知命令：/${sanitizeTerminalText(command.value)}`));
       return true;
   }
+}
+
+async function runReviewCommand(
+  command: Extract<SlashCommand, { name: "review" }>,
+): Promise<boolean> {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+  try {
+    const task = buildReviewTask(command.mode, command.target);
+    const label = command.target
+      ? "代码审查：" + command.target
+      : "代码审查：当前工作区";
+    await runTask(task, {
+      toolPolicy: command.mode === "fix" ? "full" : "read-only",
+      contextMode: "workspace",
+      recordedTask: label + (command.mode === "fix" ? "（允许确认后修复）" : "（只读）"),
+      displayTask: label,
+    });
+    return false;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(color.error("无法开始代码审查：" + sanitizeTerminalText(message)));
+    return true;
+  }
+}
+
+function startPaste(): boolean {
+  if (controller) {
+    console.log(color.warning("当前已有任务运行，请先输入 /cancel。"));
+    return false;
+  }
+  pasteBuffer = new PasteBuffer();
+  console.log(color.bold("\n粘贴代码片段"));
+  console.log(color.muted("输入 .end 开始只读审查，输入 /cancel 取消；不会扫描本地项目。"));
+  printPastePrompt();
+  return false;
+}
+
+async function handlePasteLine(line: string): Promise<void> {
+  const control = line.trim().toLowerCase();
+  if (control === "/exit") {
+    pasteBuffer = null;
+    shutdown();
+    return;
+  }
+  if (control === "/cancel") {
+    pasteBuffer = null;
+    console.log(color.muted("已取消粘贴代码审查。"));
+    printPrompt();
+    return;
+  }
+  if (control === ".end") {
+    const buffer = pasteBuffer;
+    pasteBuffer = null;
+    if (!buffer) return;
+    try {
+      const snippet = buffer.finish();
+      await runTask(buildPastedReviewTask(snippet), {
+        toolPolicy: "none",
+        contextMode: "none",
+        recordedTask: "审查用户粘贴的代码片段（内容未保存）",
+        displayTask: "审查已粘贴的代码片段，共 " + buffer.lineCount + " 行",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(color.error("粘贴代码审查失败：" + sanitizeTerminalText(message)));
+      printPrompt();
+    }
+    return;
+  }
+
+  const activeBuffer = pasteBuffer;
+  if (!activeBuffer) return;
+  try {
+    activeBuffer.add(line);
+    printPastePrompt();
+  } catch (error) {
+    pasteBuffer = null;
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(color.error("粘贴失败：" + sanitizeTerminalText(message)));
+    printPrompt();
+  }
+}
+
+function printPastePrompt(): void {
+  process.stdout.write(color.brand("paste> "));
 }
 
 async function runModelCommand(
@@ -444,8 +573,10 @@ function settleApproval(decision: ApprovalDecision): void {
 function shutdown(): void {
   if (exiting) return;
   exiting = true;
+  pasteBuffer = null;
   settleApproval("denied");
   controller?.abort(new Error("程序退出"));
   console.log(color.muted("\n已退出 CodeMuse。"));
   readline.close();
+}
 }

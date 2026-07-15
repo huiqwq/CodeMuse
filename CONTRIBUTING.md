@@ -39,6 +39,7 @@ chore: 配置和工具维护
 ```powershell
 npm test
 npm run typecheck
+npm run check
 git status
 ```
 

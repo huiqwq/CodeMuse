@@ -1,4 +1,5 @@
 import { AgentStateStore } from "./agent-state.ts";
+import { RepairPolicy } from "./repair-policy.ts";
 import {
   formatProjectSummary,
   selectTaskContext,
@@ -19,7 +20,7 @@ import type {
 } from "../types.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 
-const MAX_MODEL_TURNS = 12;
+const MAX_MODEL_TURNS = 20;
 
 const SYSTEM_PROMPT = `你是 CodeMuse，一个运行在用户终端中的本地编程 Agent。
 系统会先扫描项目、生成任务计划，并在 Token 预算内提供与任务最相关的代码片段。
@@ -33,7 +34,9 @@ const SYSTEM_PROMPT = `你是 CodeMuse，一个运行在用户终端中的本地
 需要验证代码时，必须先调用 list_scripts 查看根目录 package.json；只能用 run_script 执行其中标记为允许的 test/build/lint/typecheck/check 类脚本。
 run_script 只接受脚本名称，不得尝试传递命令或额外参数。每次执行都必须由用户确认。
 工具失败或脚本返回非零退出码时应如实分析，不得编造成功结果。
-最终回答应引用实际文件路径，并说明修改、脚本命令、退出码和仍需处理的内容。`;
+脚本失败后，使用 CodeMuse 提供的结构化诊断优先读取或搜索相关文件；只有用户明确要求修复时才能提出补丁。
+修复补丁获批后必须重新运行原失败脚本。相同失败连续出现或达到补丁上限时，系统会停止工具调用，你必须总结证据和剩余问题。
+最终回答应引用实际文件路径，并说明修改、脚本命令、退出码、修复是否验证通过和仍需处理的内容。`;
 
 type PendingToolCall = {
   id: string;
@@ -139,6 +142,8 @@ export class ModelAgent implements AgentRunner {
         },
       ];
       let toolExecutions = 0;
+      const repairPolicy = new RepairPolicy(workspace.root);
+      let finalOnlyReason: string | null = null;
 
       for (let turn = 1; turn <= MAX_MODEL_TURNS; turn += 1) {
         if (options.signal.aborted) throw options.signal.reason;
@@ -150,7 +155,7 @@ export class ModelAgent implements AgentRunner {
 
         for await (const event of this.provider.stream(
           messages,
-          this.tools.definitions(),
+          finalOnlyReason ? [] : this.tools.definitions(),
           options.signal,
         )) {
           if (event.type === "text-delta") {
@@ -180,6 +185,14 @@ export class ModelAgent implements AgentRunner {
           .sort(([left], [right]) => left - right)
           .map(([, call]) => call);
 
+        if (finalOnlyReason && toolCalls.length > 0) {
+          yield {
+            type: "error",
+            message: "自动修复停止后模型仍请求工具，任务已终止",
+          };
+          return;
+        }
+
         messages.push({
           role: "assistant",
           content: content || null,
@@ -193,7 +206,9 @@ export class ModelAgent implements AgentRunner {
           yield { type: "step-complete", id: `model-${turn}`, result: "任务完成" };
           yield {
             type: "complete",
-            summary: `Agent 任务完成，共执行 ${toolExecutions} 次工具调用`,
+            summary: finalOnlyReason
+              ? `自动修复已停止：${finalOnlyReason}`
+              : `Agent 任务完成，共执行 ${toolExecutions} 次工具调用`,
           };
           return;
         }
@@ -214,6 +229,23 @@ export class ModelAgent implements AgentRunner {
             summary: describeToolCall(call),
           };
 
+          const policyStop = repairPolicy.beforeTool(call.name);
+          if (policyStop) {
+            finalOnlyReason = policyStop;
+            yield {
+              type: "tool-failed",
+              id: call.id,
+              name: call.name,
+              error: policyStop,
+            };
+            messages.push({
+              role: "tool",
+              toolCallId: call.id,
+              content: JSON.stringify({ error: policyStop, repairStopped: true }),
+            });
+            continue;
+          }
+
           try {
             const result = await this.tools.execute(
               call,
@@ -230,11 +262,20 @@ export class ModelAgent implements AgentRunner {
             if (result.displayContent) {
               yield { type: "command-output", content: result.displayContent };
             }
+            const repairObservation = repairPolicy.observe(call.name, result.value);
             messages.push({
               role: "tool",
               toolCallId: call.id,
-              content: result.modelContent,
+              content: repairObservation.modelContext
+                ? `${result.modelContent}\n\n${repairObservation.modelContext}`
+                : result.modelContent,
             });
+            if (repairObservation.notice) {
+              yield { type: "notice", message: repairObservation.notice };
+            }
+            if (repairObservation.stoppedReason) {
+              finalOnlyReason = repairObservation.stoppedReason;
+            }
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             yield { type: "tool-failed", id: call.id, name: call.name, error: message };
@@ -244,6 +285,13 @@ export class ModelAgent implements AgentRunner {
               content: JSON.stringify({ error: message }),
             });
           }
+        }
+
+        if (finalOnlyReason) {
+          messages.push({
+            role: "system",
+            content: `CodeMuse 自动修复停止策略已触发：${finalOnlyReason}。不得再调用工具，只能根据已有证据给出简洁总结，明确说明验证未通过和建议的人工下一步。`,
+          });
         }
       }
 

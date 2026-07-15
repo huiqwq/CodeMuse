@@ -22,7 +22,7 @@ class PatchProvider implements ModelProvider {
     _signal: AbortSignal,
   ): AsyncGenerator<ModelStreamEvent> {
     this.calls += 1;
-    assert.equal(tools.length, 6);
+    assert.equal(tools.length, 11);
 
     if (this.calls === 1) {
       yield {
@@ -90,6 +90,12 @@ test("ModelAgent 完成读取、授权写入并支持撤销", async () => {
     assert.ok(
       events.some((event) =>
         event.type === "tool-complete" && event.name === "apply_patch"
+      ),
+    );
+    assert.ok(
+      events.some((event) =>
+        event.type === "complete" &&
+        event.summary?.includes("本次 Agent 文件操作：修改 1")
       ),
     );
 

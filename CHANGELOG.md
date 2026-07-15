@@ -2,6 +2,40 @@
 
 CodeMuse 的重要版本变化记录在此文件中。每个正式版本还必须在 `docs/releases/` 下提供独立说明文档，记录目标、功能、限制、测试和使用方法。
 
+## [0.8.0] - 2026-07-15
+
+详细说明：[docs/releases/v0.8.0.md](docs/releases/v0.8.0.md)
+
+### Added
+
+- `create_file` 安全创建最多 100 KB 的 UTF-8 文本文件。
+- `rename_file` 和 `delete_file` 已读取文本文件操作。
+- 每次创建、重命名和删除前的独立授权与冲突复检。
+- ChangeJournal 的 create、modify、rename、delete 操作记录和混合撤销。
+- `git_status` 当前分支、Porcelain 状态和变更归属。
+- `git_diff` 未暂存/已暂存只读 Diff 和可选路径过滤。
+- 首次写入前的 Git 状态基线与 Agent 变更路径总结。
+- Git 固定参数子进程、10 秒超时、80 KB 输出上限和敏感环境变量清理。
+- 文件生命周期、Git 解析、归属、非仓库、超时和截断测试。
+
+### Changed
+
+- 项目版本升级为 `0.8.0`。
+- ModelAgent 注册工具由 6 个增加到 11 个，并更新文件与 Git 安全提示。
+- 每个成功模型任务输出确定性的 Agent 文件操作摘要。
+- Mock 模式说明 v0.8 文件操作和 Git 审查边界。
+- `/undo` 从只支持内容修改升级为支持混合文件生命周期操作。
+- 自动测试由 43 项增加到 51 项。
+
+### Security
+
+- 新文件目标必须不存在，父目录必须在工作区内且已经存在。
+- 创建、重命名和删除只处理允许的普通 UTF-8 文本路径。
+- 重命名和删除要求当前任务先读取文件，并拒绝符号链接。
+- 所有高风险文件操作在授权后再次检查内容和目标占用。
+- Git Status 过滤敏感和忽略路径，Git Diff 使用排除 pathspec。
+- Git 子进程使用 `shell:false`，没有注册任何 Git 写操作。
+- 不自动执行 add、commit、checkout、reset、push 或 npm install。
 ## [0.7.0] - 2026-07-15
 
 详细说明：[docs/releases/v0.7.0.md](docs/releases/v0.7.0.md)

@@ -4,6 +4,8 @@ import "./model-config.test.ts";
 import "./read-only-tools.test.ts";
 import "./context-management.test.ts";
 import "./patch-tools.test.ts";
+import "./file-operations.test.ts";
+import "./git-tools.test.ts";
 import "./script-tools.test.ts";
 import "./repair-loop.test.ts";
 import "./session-store.test.ts";

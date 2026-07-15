@@ -1,4 +1,5 @@
 import { AgentStateStore } from "./agent-state.ts";
+import { formatChangeSummary } from "../changes/change-journal.ts";
 import { RepairPolicy } from "./repair-policy.ts";
 import {
   formatProjectSummary,
@@ -29,9 +30,11 @@ const SYSTEM_PROMPT = `你是 CodeMuse，一个运行在用户终端中的本地
 你可以使用 list_files、read_file 和 search_code 补充证据。
 当用户明确要求修改代码时，可以使用 apply_patch 精确替换文件中的唯一局部片段。
 调用 apply_patch 前必须先读取目标文件；oldText 必须来自实际文件且不含行号。
-禁止整文件覆盖，禁止修改用户未要求的内容，禁止在用户拒绝后重复请求同一写入。
-每次写入都会先向用户展示 Diff，只有用户明确同意才会落盘。
-所有路径必须使用工作区相对路径。你不能执行任意 Shell、Git 写操作或删除文件。
+用户明确要求新增文件时可使用 create_file；要求重命名或删除时，必须先 read_file，再使用 rename_file 或 delete_file。
+禁止整文件覆盖现有文件，禁止修改用户未要求的内容，禁止在用户拒绝后重复请求同一写入。
+每次修改、创建、重命名或删除都会单独展示 Diff 或操作清单，只有用户明确同意才会落盘。
+可以使用 git_status 查看分支、状态和变更归属，使用 git_diff 查看只读差异。
+所有路径必须使用工作区相对路径。你不能执行任意 Shell 或任何 Git 写操作，也不能自动 commit 或 push。
 需要验证代码时，必须先调用 list_scripts 查看根目录 package.json；只能用 run_script 执行其中标记为允许的 test/build/lint/typecheck/check 类脚本。
 run_script 只接受脚本名称，不得尝试传递命令或额外参数。每次执行都必须由用户确认。
 工具失败或脚本返回非零退出码时应如实分析，不得编造成功结果。
@@ -209,11 +212,16 @@ export class ModelAgent implements AgentRunner {
           this.state.setStep("analyze", "completed");
           this.state.setStep("respond", "completed");
           yield { type: "step-complete", id: `model-${turn}`, result: "任务完成" };
+          const changeSummary = this.tools.getActiveChangeSummary();
+          const changeText = formatChangeSummary(changeSummary);
+          if (changeSummary.totalOperations > 0) {
+            yield { type: "notice", message: changeText };
+          }
           yield {
             type: "complete",
             summary: finalOnlyReason
-              ? `自动修复已停止：${finalOnlyReason}`
-              : `Agent 任务完成，共执行 ${toolExecutions} 次工具调用`,
+              ? `自动修复已停止：${finalOnlyReason}；${changeText}`
+              : `Agent 任务完成，共执行 ${toolExecutions} 次工具调用；${changeText}`,
           };
           return;
         }

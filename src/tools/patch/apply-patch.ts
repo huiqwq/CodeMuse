@@ -142,6 +142,7 @@ export class ApplyPatchTool implements AgentTool<ApplyPatchInput, ApplyPatchOutp
     await writeTextAtomically(target.absolutePath, updated, info.mode);
     try {
       context.changes.record(context.workspace, {
+        kind: "modify",
         path: target.relativePath,
         before: original,
         after: updated,

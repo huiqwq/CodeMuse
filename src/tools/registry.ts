@@ -1,4 +1,7 @@
-import { ChangeJournal } from "../changes/change-journal.ts";
+import {
+  ChangeJournal,
+  type ChangeSummary,
+} from "../changes/change-journal.ts";
 import type {
   ApprovalHandler,
   ToolCall,
@@ -6,6 +9,10 @@ import type {
   UndoResult,
 } from "../types.ts";
 import type { WorkspaceContext } from "../context/workspace.ts";
+import {
+  readGitStatus,
+  type GitStatusSnapshot,
+} from "./git/git-status.ts";
 import type {
   AgentTool,
   ToolExecutionResult,
@@ -15,11 +22,22 @@ import type {
 const MAX_MODEL_CONTENT = 24_000;
 const denyApproval: ApprovalHandler = async () => "denied";
 
+export type GitStatusReader = (
+  workspace: WorkspaceContext,
+  signal: AbortSignal,
+) => Promise<GitStatusSnapshot>;
+
 export class ToolRegistry {
   private readonly tools = new Map<string, AgentTool>();
   private readonly changes = new ChangeJournal();
   private readonly observedFiles = new Set<string>();
   private scriptsListed = false;
+  private gitBaseline: GitStatusSnapshot | null = null;
+  private readonly gitStatusReader: GitStatusReader;
+
+  constructor(gitStatusReader: GitStatusReader = readGitStatus) {
+    this.gitStatusReader = gitStatusReader;
+  }
 
   register(tool: AgentTool): this {
     const name = tool.definition.function.name;
@@ -37,13 +55,19 @@ export class ToolRegistry {
   beginTask(workspace: WorkspaceContext, task: string): void {
     this.observedFiles.clear();
     this.scriptsListed = false;
+    this.gitBaseline = null;
     this.changes.beginTask(workspace, task);
   }
 
   finishTask(): void {
     this.observedFiles.clear();
     this.scriptsListed = false;
+    this.gitBaseline = null;
     this.changes.finishTask();
+  }
+
+  getActiveChangeSummary(): ChangeSummary {
+    return this.changes.activeSummary();
   }
 
   undoLatest(
@@ -71,6 +95,9 @@ export class ToolRegistry {
     }
 
     const input = tool.validate(rawInput);
+    if (tool.risk === "write") {
+      await this.ensureGitBaseline(workspace, signal);
+    }
     const value = await tool.execute(input, {
       workspace,
       signal,
@@ -78,6 +105,8 @@ export class ToolRegistry {
       requestApproval: runtime.requestApproval ?? denyApproval,
       hasObservedFile: (path) => this.observedFiles.has(path),
       hasListedScripts: () => this.scriptsListed,
+      getGitBaseline: () => this.ensureGitBaseline(workspace, signal),
+      getAgentChangeSummary: () => this.changes.activeSummary(),
     });
 
     if (
@@ -101,6 +130,16 @@ export class ToolRegistry {
       summary: tool.summarize(value),
       displayContent: tool.display?.(value),
     };
+  }
+
+  private async ensureGitBaseline(
+    workspace: WorkspaceContext,
+    signal: AbortSignal,
+  ): Promise<GitStatusSnapshot> {
+    if (!this.gitBaseline) {
+      this.gitBaseline = await this.gitStatusReader(workspace, signal);
+    }
+    return this.gitBaseline;
   }
 }
 

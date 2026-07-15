@@ -3,7 +3,11 @@ import type {
   ToolCall,
   ToolDefinition,
 } from "../types.ts";
-import type { ChangeJournal } from "../changes/change-journal.ts";
+import type {
+  ChangeJournal,
+  ChangeSummary,
+} from "../changes/change-journal.ts";
+import type { GitStatusSnapshot } from "./git/git-status.ts";
 import type { WorkspaceContext } from "../context/workspace.ts";
 
 export type ToolRisk = "read" | "write" | "execute";
@@ -15,6 +19,8 @@ export type ToolContext = {
   requestApproval: ApprovalHandler;
   hasObservedFile: (path: string) => boolean;
   hasListedScripts: () => boolean;
+  getGitBaseline: () => Promise<GitStatusSnapshot>;
+  getAgentChangeSummary: () => ChangeSummary;
 };
 
 export type ToolRuntimeOptions = {

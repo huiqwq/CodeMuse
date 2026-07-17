@@ -16,6 +16,116 @@ export type TaskPlan = {
   steps: PlanStep[];
 };
 
+export type AgentMode = "normal" | "plan" | "goal";
+
+export type PlanArtifactStatus =
+  | "draft"
+  | "ready"
+  | "approved"
+  | "executing"
+  | "completed"
+  | "stale"
+  | "cancelled";
+
+export type PlanArtifactStep = {
+  id: string;
+  title: string;
+  details: string;
+  status: StepStatus;
+};
+
+export type PlanArtifact = {
+  id: string;
+  revision: number;
+  objective: string;
+  scope: string[];
+  steps: PlanArtifactStep[];
+  validation: string[];
+  risks: string[];
+  assumptions: string[];
+  revisionNotes: string[];
+  workspaceFingerprint: string;
+  workspaceFileCount: number;
+  workspaceTruncated: boolean;
+  status: PlanArtifactStatus;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+};
+
+export type GoalStatus =
+  | "active"
+  | "paused"
+  | "completed"
+  | "blocked"
+  | "cancelled";
+
+export type GoalTaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type GoalBudget = {
+  maxTokens: number;
+  usedTokens: number;
+  maxRuns: number;
+  usedRuns: number;
+  maxRuntimeMs: number;
+  usedRuntimeMs: number;
+};
+
+export type GoalTask = {
+  id: string;
+  title: string;
+  status: GoalTaskStatus;
+  evidence: string[];
+};
+
+export type GoalRecord = {
+  id: string;
+  objective: string;
+  successCriteria: string[];
+  tasks: GoalTask[];
+  budget: GoalBudget;
+  evidence: string[];
+  recentFailures: string[];
+  status: GoalStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+export type ProjectMemoryKind =
+  | "architecture"
+  | "convention"
+  | "decision"
+  | "validation"
+  | "issue"
+  | "verified-result";
+
+export type ProjectMemorySource = {
+  type: "user" | "tool" | "session";
+  reference: string;
+};
+
+export type ProjectMemory = {
+  id: string;
+  kind: ProjectMemoryKind;
+  content: string;
+  sources: ProjectMemorySource[];
+  relatedPaths: string[];
+  confidence: number;
+  verifiedAt: string;
+  stale: boolean;
+  invalidationKeys: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApprovalMode = "strict" | "plan-scoped";
+
 export type ProjectScan = {
   projectName: string;
   projectTypes: string[];
@@ -123,7 +233,12 @@ export type AgentEvent =
   | { type: "command-output"; content: string }
   | { type: "notice"; message: string }
   | { type: "error"; message: string }
-  | { type: "complete"; summary?: string };
+  | {
+      type: "complete";
+      summary?: string;
+      verified?: boolean;
+      validationCommands?: string[];
+    };
 
 export type AgentResumeContext = {
   sessionId: string;
@@ -144,6 +259,8 @@ export type AgentRunOptions = {
   resume?: AgentResumeContext;
   toolPolicy?: AgentToolPolicy;
   contextMode?: AgentContextMode;
+  projectMemories?: string[];
+  executionScope?: string[];
 };
 
 export interface AgentRunner {

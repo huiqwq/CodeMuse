@@ -5,6 +5,7 @@ import { RenameFileTool } from "./filesystem/rename-file.ts";
 import { GitDiffTool } from "./git/git-diff.ts";
 import { GitStatusTool } from "./git/git-status.ts";
 import { ApplyPatchTool } from "./patch/apply-patch.ts";
+import { ApplyPatchSetTool } from "./patch/apply-patch-set.ts";
 import { ListScriptsTool } from "./scripts/list-scripts.ts";
 import { RunScriptTool } from "./scripts/run-script.ts";
 import type { ToolRegistry } from "./registry.ts";
@@ -12,6 +13,7 @@ import type { ToolRegistry } from "./registry.ts";
 export function createCodingToolRegistry(): ToolRegistry {
   return createReadOnlyToolRegistry()
     .register(new ApplyPatchTool())
+    .register(new ApplyPatchSetTool())
     .register(new CreateFileTool())
     .register(new RenameFileTool())
     .register(new DeleteFileTool())

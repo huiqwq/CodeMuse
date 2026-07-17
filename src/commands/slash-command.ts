@@ -7,6 +7,29 @@ export type ModelCommandAction =
   | "reload"
   | "unknown";
 
+export type PlanCommandAction =
+  | "status"
+  | "on"
+  | "revise"
+  | "approve"
+  | "off";
+
+export type GoalCommandAction =
+  | "create"
+  | "status"
+  | "pause"
+  | "resume"
+  | "complete"
+  | "cancel"
+  | "history";
+
+export type MemoryCommandAction =
+  | "list"
+  | "show"
+  | "add"
+  | "forget"
+  | "clear";
+
 export type SlashCommand =
   | { name: "help" }
   | { name: "clear" }
@@ -16,7 +39,11 @@ export type SlashCommand =
   | { name: "paste" }
   | { name: "usage" }
   | { name: "workspace" }
-  | { name: "plan" }
+  | { name: "plan"; action: PlanCommandAction; value?: string }
+  | { name: "goal"; action: GoalCommandAction; value?: string }
+  | { name: "memory"; action: MemoryCommandAction; value?: string }
+  | { name: "approval"; mode?: "strict" | "plan-scoped" }
+  | { name: "doctor"; action: "run" | "export" }
   | { name: "context" }
   | { name: "scan" }
   | { name: "undo" }
@@ -37,13 +64,26 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     case "cancel":
     case "usage":
     case "workspace":
-    case "plan":
     case "context":
     case "scan":
     case "undo":
     case "history":
     case "exit":
       return { name };
+    case "doctor":
+      return argumentsList[0]?.toLowerCase() === "export"
+        ? { name, action: "export" }
+        : argumentsList.length === 0
+        ? { name, action: "run" }
+        : { name: "unknown", value: `doctor ${argumentsList.join(" ")}` };
+    case "plan":
+      return parsePlanCommand(argumentsList);
+    case "goal":
+      return parseGoalCommand(argumentsList);
+    case "memory":
+      return parseMemoryCommand(argumentsList);
+    case "approval":
+      return parseApprovalCommand(argumentsList);
     case "model":
       return parseModelCommand(argumentsList);
     case "review":
@@ -57,6 +97,80 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     default:
       return { name: "unknown", value: name };
   }
+}
+
+function parsePlanCommand(argumentsList: string[]): SlashCommand {
+  const [rawAction = "", ...rest] = argumentsList;
+  const action = rawAction.toLowerCase();
+  const value = rest.join(" ").trim();
+  switch (action) {
+    case "":
+    case "status":
+      return { name: "plan", action: "status" };
+    case "on":
+    case "approve":
+    case "off":
+      return { name: "plan", action };
+    case "revise":
+      return value
+        ? { name: "plan", action, value }
+        : { name: "plan", action };
+    default:
+      return { name: "unknown", value: `plan ${argumentsList.join(" ")}` };
+  }
+}
+
+function parseGoalCommand(argumentsList: string[]): SlashCommand {
+  const [rawAction = "", ...rest] = argumentsList;
+  const action = rawAction.toLowerCase();
+  const value = rest.join(" ").trim();
+  switch (action) {
+    case "":
+    case "status":
+      return { name: "goal", action: "status" };
+    case "create":
+      return value
+        ? { name: "goal", action, value }
+        : { name: "goal", action };
+    case "pause":
+    case "resume":
+    case "complete":
+    case "cancel":
+    case "history":
+      return { name: "goal", action };
+    default:
+      return { name: "unknown", value: `goal ${argumentsList.join(" ")}` };
+  }
+}
+
+function parseMemoryCommand(argumentsList: string[]): SlashCommand {
+  const [rawAction = "", ...rest] = argumentsList;
+  const action = rawAction.toLowerCase();
+  const value = rest.join(" ").trim();
+  switch (action) {
+    case "":
+    case "list":
+      return { name: "memory", action: "list" };
+    case "clear":
+      return { name: "memory", action };
+    case "show":
+    case "add":
+    case "forget":
+      return value
+        ? { name: "memory", action, value }
+        : { name: "memory", action };
+    default:
+      return { name: "unknown", value: `memory ${argumentsList.join(" ")}` };
+  }
+}
+
+function parseApprovalCommand(argumentsList: string[]): SlashCommand {
+  const value = argumentsList.join(" ").trim().toLowerCase();
+  if (!value) return { name: "approval" };
+  if (value === "strict" || value === "plan-scoped") {
+    return { name: "approval", mode: value };
+  }
+  return { name: "unknown", value: `approval ${value}` };
 }
 
 function parseModelCommand(argumentsList: string[]): SlashCommand {
@@ -116,7 +230,24 @@ export const HELP_TEXT = `可用命令
   /paste                粘贴临时代码，输入 .end 开始审查
   /usage                查看当前进程 Token 用量
   /workspace            查看当前工作区
-  /plan                 查看最近一次任务计划
+  /plan on              进入持续规划模式（只读）
+  /plan status          查看结构化计划
+  /plan revise <要求>   修订当前计划
+  /plan approve         批准并执行当前计划
+  /plan off             退出规划模式
+  /goal create <目标>   创建可恢复的长期目标
+  /goal status          查看目标进度与预算
+  /goal pause|resume    暂停或恢复目标
+  /goal complete        在存在验证证据时完成目标
+  /goal cancel|history  取消目标或查看历史
+  /memory list          查看项目记忆
+  /memory show <ID>     查看记忆详情
+  /memory add <内容>    保存用户确认的项目记忆
+  /memory forget <ID>   遗忘一条项目记忆
+  /memory clear         清空当前项目记忆
+  /approval [MODE]      查看或设置 strict / plan-scoped
+  /doctor               诊断运行环境
+  /doctor export        生成已脱敏的本地诊断记录
   /context              查看最近一次上下文选择
   /scan                 重新扫描当前项目
   /undo                 撤销当前进程最近一次任务修改

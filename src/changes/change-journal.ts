@@ -100,8 +100,20 @@ export class ChangeJournal {
   }
 
   assertCanRecord(workspace: WorkspaceContext, ...paths: string[]): void {
+    this.assertCanRecordOperations(workspace, 1, ...paths);
+  }
+
+  assertCanRecordOperations(
+    workspace: WorkspaceContext,
+    operationCount: number,
+    ...paths: string[]
+  ): void {
     const active = this.requireActive(workspace);
-    if (active.changes.length >= MAX_OPERATIONS_PER_TASK) {
+    if (
+      !Number.isInteger(operationCount) ||
+      operationCount < 1 ||
+      active.changes.length + operationCount > MAX_OPERATIONS_PER_TASK
+    ) {
       throw new Error(`单个任务最多执行 ${MAX_OPERATIONS_PER_TASK} 次文件修改操作`);
     }
 

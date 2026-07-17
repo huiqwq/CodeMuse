@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { basename, extname, posix } from "node:path";
 import {
   containsBinaryBytes,
   isBinaryFileName,
@@ -82,6 +82,7 @@ export async function selectTaskContext(
     });
   }
 
+  enrichRelationshipScores(candidates);
   candidates.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
 
   const selected: SelectedContextFile[] = [];
@@ -131,6 +132,75 @@ export async function selectTaskContext(
       .map((file) => `--- FILE ${file.path} ---\n${file.content}\n--- END FILE ${file.path} ---`)
       .join("\n\n"),
   };
+}
+
+function enrichRelationshipScores(candidates: Candidate[]): void {
+  const byPath = new Map(candidates.map((candidate) => [candidate.path, candidate]));
+  const bonuses = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    for (const referencedPath of resolveReferencedPaths(candidate, byPath)) {
+      const target = byPath.get(referencedPath);
+      if (!target) continue;
+      const forwardBonus = Math.min(24, Math.max(4, Math.floor(candidate.score / 3)));
+      bonuses.set(target.path, (bonuses.get(target.path) ?? 0) + forwardBonus);
+      bonuses.set(candidate.path, (bonuses.get(candidate.path) ?? 0) + 4);
+    }
+
+    const name = basename(candidate.path).replace(
+      /\.(?:test|spec)(?=\.)|(?:[-_.](?:test|spec))?(\.[^.]+)$/,
+      "",
+    );
+    if (!name) continue;
+    const isTest = /(?:^|\/|[-_.])(?:test|tests|spec|specs)(?:\/|[-_.]|$)/i
+      .test(candidate.path);
+    if (!isTest) continue;
+    for (const other of candidates) {
+      if (other.path === candidate.path) continue;
+      if (basename(other.path).includes(name)) {
+        const shared = Math.min(16, Math.max(candidate.score, other.score) / 4);
+        bonuses.set(candidate.path, (bonuses.get(candidate.path) ?? 0) + shared);
+        bonuses.set(other.path, (bonuses.get(other.path) ?? 0) + shared);
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    candidate.score += Math.min(60, bonuses.get(candidate.path) ?? 0);
+  }
+}
+
+function resolveReferencedPaths(
+  candidate: Candidate,
+  byPath: Map<string, Candidate>,
+): string[] {
+  const references = new Set<string>();
+  const patterns = [
+    /\bfrom\s+["']([^"']+)["']/g,
+    /\brequire\(\s*["']([^"']+)["']\s*\)/g,
+    /\bimport\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of candidate.content.matchAll(pattern)) {
+      const specifier = match[1];
+      if (!specifier?.startsWith(".")) continue;
+      const base = posix.normalize(
+        posix.join(posix.dirname(candidate.path), specifier),
+      );
+      const variants = [
+        base,
+        `${base}.ts`,
+        `${base}.tsx`,
+        `${base}.js`,
+        `${base}.jsx`,
+        `${base}/index.ts`,
+        `${base}/index.js`,
+      ];
+      const found = variants.find((path) => byPath.has(path));
+      if (found) references.add(found);
+    }
+  }
+  return [...references];
 }
 
 export function formatProjectSummary(project: ProjectScan): string {

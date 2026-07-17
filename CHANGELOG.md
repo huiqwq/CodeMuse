@@ -2,6 +2,60 @@
 
 CodeMuse 的重要版本变化记录在此文件中。每个正式版本还必须在 `docs/releases/` 下提供独立说明文档，记录目标、功能、限制、测试和使用方法。
 
+## [1.0.0] - 2026-07-17
+
+详细说明：[docs/releases/v1.0.0.md](docs/releases/v1.0.0.md)
+
+### Added
+
+- npm 公开发布配置、文件白名单和 `prepack` 质量门。
+- 首次启动提示、`/doctor`、`/doctor export` 和脱敏诊断事件。
+- macOS Keychain 与 Linux Secret Service 安全凭据后端。
+- CLI、隐私、迁移和故障排查文档。
+
+### Changed
+
+- 项目版本升级为 `1.0.0`，CLI 标题和路线图同步更新。
+- 自动测试增加到 77 项。
+
+### Security
+
+- 无安全凭据后端时不回退明文存储。
+- 诊断不保存源码、完整 Diff、模型原文或密钥。
+
+## [0.14.0] - 2026-07-17
+
+详细说明：[docs/releases/v0.14.0.md](docs/releases/v0.14.0.md)
+
+- 上下文选择增加 import、反向关联和测试关系加权。
+- 补丁写入前校验 `read_file` SHA-256 指纹。
+- ToolRegistry 强制执行批准计划的写入范围。
+- `apply_patch_set` 一次预览并原子应用多文件协调变更。
+- 增加 `/approval strict|plan-scoped` 和验证完成证据。
+
+## [0.13.0] - 2026-07-17
+
+详细说明：[docs/releases/v0.13.0.md](docs/releases/v0.13.0.md)
+
+- 增加工作区项目记忆、来源、关联路径和文件指纹失效。
+- 增加 `/memory list/show/add/forget/clear`。
+- 记忆检索使用独立 Token 预算并拒绝敏感凭据。
+
+## [0.12.0] - 2026-07-17
+
+详细说明：[docs/releases/v0.12.0.md](docs/releases/v0.12.0.md)
+
+- 增加可恢复 Goal、成功标准、子任务、预算、证据和阻塞状态。
+- 增加 `/goal create/status/pause/resume/complete/cancel/history`。
+
+## [0.11.0] - 2026-07-17
+
+详细说明：[docs/releases/v0.11.0.md](docs/releases/v0.11.0.md)
+
+- 增加持续 Plan Mode 和 `/plan on/status/revise/approve/off`。
+- 增加结构化 PlanArtifact、修订记录、范围与工作区过期检测。
+- 规划期间仅允许只读工具；未批准计划不能进入执行。
+
 ## [0.10.0] - 2026-07-15
 
 详细说明：[docs/releases/v0.10.0.md](docs/releases/v0.10.0.md)

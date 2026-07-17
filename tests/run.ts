@@ -17,3 +17,4 @@ import "./session-store.test.ts";
 import "./agent-patch-loop.test.ts";
 import "./agent-loop.test.ts";
 import "./compatible-provider.test.ts";
+import "./workspace-features.test.ts";

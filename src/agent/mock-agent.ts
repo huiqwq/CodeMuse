@@ -27,7 +27,7 @@ export class MockAgent implements AgentRunner {
   constructor(
     contextTokenBudget = 6_000,
     tools: ToolRegistry = createCodingToolRegistry(),
-    modelName = "Mock（安全凭据与代码审查边界演示）",
+    modelName = "Mock（Plan、Goal 与安全边界演示）",
   ) {
     this.modelName = modelName;
     this.contextTokenBudget = contextTokenBudget;
@@ -162,7 +162,12 @@ export class MockAgent implements AgentRunner {
       }
       yield { type: "message-complete" };
       this.state.setStep("respond", "completed");
-      yield { type: "complete", summary: "Mock 多模型配置与 API 安全边界演示完成" };
+      yield {
+        type: "complete",
+        summary: "Mock Plan、Goal 与 API 安全边界演示完成；未产生代码修改",
+        verified: true,
+        validationCommands: [],
+      };
     } catch (error) {
       if (options.signal.aborted) {
         this.state.failRunningSteps("cancelled");

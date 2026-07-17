@@ -303,7 +303,7 @@ export class ManagedAgent implements AgentRunner {
       return new MockAgent(
         this.contextTokenBudget,
         this.tools,
-        "Mock（安全凭据与代码审查演示）",
+        "Mock（Plan、Goal 与安全边界演示）",
       );
     }
     const profile = this.catalog.profiles.find((item) =>

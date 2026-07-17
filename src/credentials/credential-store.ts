@@ -3,12 +3,17 @@ import {
   lstat,
   mkdir,
   readFile,
+  rename,
+  rm,
   writeFile,
 } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import type { CredentialProtector } from "./types.ts";
 import { WindowsDpapiProtector } from "./windows-dpapi.ts";
+import { MacOsKeychainProtector } from "./macos-keychain.ts";
+import { LinuxSecretServiceProtector } from "./linux-secret-service.ts";
 
 const SCHEMA_VERSION = 1;
 const MAX_FILE_BYTES = 128_000;
@@ -83,9 +88,21 @@ export class CredentialStore {
     ) {
       throw new Error(`安全凭据最多保存 ${MAX_CREDENTIALS} 项`);
     }
-    file.credentials[normalizedId] = await this.protector.protect(secret);
-    validatePayload(file.credentials[normalizedId]);
-    await this.writeFile(file);
+    const previousPayload = file.credentials[normalizedId];
+    const nextPayload = await this.protector.protect(secret);
+    validatePayload(nextPayload);
+    file.credentials[normalizedId] = nextPayload;
+    try {
+      await this.writeFile(file);
+    } catch (error) {
+      if (this.protector.delete) {
+        await this.protector.delete(nextPayload).catch(() => undefined);
+      }
+      throw error;
+    }
+    if (previousPayload && this.protector.delete) {
+      await this.protector.delete(previousPayload).catch(() => undefined);
+    }
   }
 
   async delete(id: string): Promise<boolean> {
@@ -94,8 +111,12 @@ export class CredentialStore {
     if (!file) return false;
     this.assertProtection(file);
     if (!(normalizedId in file.credentials)) return false;
+    const payload = file.credentials[normalizedId];
     delete file.credentials[normalizedId];
     await this.writeFile(file);
+    if (payload && this.protector.delete) {
+      await this.protector.delete(payload);
+    }
     return true;
   }
 
@@ -131,12 +152,21 @@ export class CredentialStore {
   }
 
   private async writeFile(file: CredentialFile): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    await writeFile(this.path, `${JSON.stringify(file, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await chmod(this.path, 0o600).catch(() => undefined);
+    const directory = dirname(this.path);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      await rename(temporary, this.path);
+      await chmod(this.path, 0o600).catch(() => undefined);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 }
 
@@ -220,6 +250,8 @@ function createPlatformProtector(
   env: NodeJS.ProcessEnv,
 ): CredentialProtector {
   if (process.platform === "win32") return new WindowsDpapiProtector(env);
+  if (process.platform === "darwin") return new MacOsKeychainProtector(env);
+  if (process.platform === "linux") return new LinuxSecretServiceProtector(env);
   return new UnsupportedProtector();
 }
 

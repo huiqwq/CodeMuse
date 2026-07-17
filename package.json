@@ -1,18 +1,28 @@
 {
   "name": "codemuse-cli",
-  "version": "0.10.0",
+  "version": "1.0.0",
   "description": "A local, multi-model coding agent for your terminal.",
   "type": "module",
-  "private": true,
   "bin": {
     "codemuse": "./src/cli.ts"
   },
+  "files": [
+    "src",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "dev": "node src/cli.ts",
     "start": "node src/cli.ts",
     "test": "node tests/run.ts",
     "check": "node --check src/cli.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm test && npm run typecheck && npm run check"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=22.18.0"

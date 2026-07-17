@@ -1,4 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import {
   containsBinaryBytes,
   isBinaryFileName,
@@ -19,6 +20,7 @@ export type ReadFileOutput = {
   endLine: number;
   totalLines: number;
   content: string;
+  fingerprint: string;
 };
 
 const MAX_FILE_BYTES = 1_000_000;
@@ -89,6 +91,7 @@ export class ReadFileTool implements AgentTool<ReadFileInput, ReadFileOutput> {
       startLine: actualStart,
       endLine: actualEnd,
       totalLines: lines.length,
+      fingerprint: createHash("sha256").update(buffer).digest("hex"),
       content: selected
         .map((line, index) => `${actualStart + index}: ${line}`)
         .join("\n"),

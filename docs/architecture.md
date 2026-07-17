@@ -1,15 +1,19 @@
 # CodeMuse 架构
 
-## v0.10.0 执行链路
+## v1.0.0 执行链路
 
 ```text
 CLI 启动
-  -> CredentialStore 读取 Windows DPAPI 密文
+  -> CredentialStore 读取 DPAPI / Keychain / Secret Service
   -> ProfileStore 合并环境变量和持久凭据
+  -> PlanStore / GoalStore / ProjectMemoryStore / SettingsStore
   -> ManagedAgent 选择 Mock 或 ModelAgent
   -> /model 可在任务之间切换 Provider
   -> /review、/review --fix 和 /paste 选择任务权限
 CLI 自然语言任务
+  -> Plan Mode：只读探索 -> 结构化计划 -> 指纹校验 -> 批准
+  -> Goal Mode：目标/预算/证据 -> 当前前台子任务
+  -> Memory：检索未失效项目记忆（独立 Token 预算）
   -> SessionRecorder 创建任务记录
   -> ProjectScanner + TaskPlanner + ContextSelector
   -> ModelAgent
@@ -20,7 +24,9 @@ CLI 自然语言任务
        └─ Token usage
   -> ToolRegistry
        ├─ list_files / read_file / search_code
-       ├─ apply_patch
+       ├─ apply_patch / apply_patch_set
+       │    -> 校验 read_file SHA-256 指纹
+       │    -> 多文件变更一次预览、失败回滚
        ├─ create_file / rename_file / delete_file
        │    -> 路径和文本安全检查
        │    -> Diff 或操作清单
@@ -32,6 +38,8 @@ CLI 自然语言任务
        │    -> 用户已有 / Agent / 共同修改分类
        └─ list_scripts -> run_script -> 授权 -> ProcessRunner
                                       -> stdout / stderr / exitCode
+  -> executionScope 拒绝计划范围外写入
+  -> Completion evidence 标记 verified / unverified
   -> FailureDiagnostics + RepairPolicy
   -> Agent 文件操作总结
   -> AgentEvent 安全摘要
@@ -40,6 +48,20 @@ CLI 自然语言任务
                   -> /history
                   -> /resume [ID]
 ```
+
+工作区新增数据文件：
+
+```text
+.codemuse/
+├─ plan.json
+├─ goals.json
+├─ memory.json
+├─ settings.json
+├─ diagnostics.json
+└─ sessions/
+```
+
+这些文件均从扫描、模型代码上下文和 Git Diff 中排除。
 
 ## 当前模块
 
@@ -241,23 +263,23 @@ FailureDiagnostics 负责错误分类、源码位置和失败指纹。RepairPoli
 
 - 完整项目保留在用户本地，只发送任务相关上下文。
 - 文件工具只处理工作区内允许的普通文本路径。
-- 每次写入、重命名、删除、撤销和脚本执行都要求明确授权。
+- 默认 `strict` 下每次写入和执行要求明确授权；显式 `plan-scoped` 只自动授权批准范围内普通写入和验证，删除、重命名与范围外操作仍需确认。
 - 只允许 package.json 中 test/build/lint/typecheck/check 类 npm scripts。
 - 不执行任意 Shell、不自动 npm install。
 - Git 能力只读，不自动 commit 或 push。
 - `.codemuse` 不进入项目扫描、模型上下文或 Git Diff。
 - API Key 不进入普通工具子进程、Profile JSON、终端列表和会话。
-- Windows CredentialStore 只保存 DPAPI 密文；环境变量仍可覆盖。
+- CredentialStore 在 Windows 使用 DPAPI、macOS 使用 Keychain、Linux 使用 Secret Service；环境变量仍可覆盖。
 - 本机 Profile 只保存凭据标识，不保存明文 Key。
 - paste 任务不扫描项目、不发送本地上下文、不提供工具。
 - 连接测试最多请求生成 1 Token，但仍是真实 API 调用。
 - Token 用量来自供应商 usage，只用于本地显示和有限会话摘要。
 - 恢复文本和项目代码都视为不可信内容，不能覆盖系统提示。
 
-## 后续架构扩展
+## v1 后续兼容原则
 
-- v0.11.0：npm 发布入口、首次配置、诊断和跨平台凭据适配。
-- v0.12.0：端到端安全、兼容性和性能验收。
-- v1.0.0：稳定连接分析、修改、验证、修复、Git 审查与会话恢复。
+- 保持主要命令、配置字段和工作区数据 schema 向前兼容。
+- 新的高风险能力默认关闭，并由工具执行入口实施约束。
+- 数据迁移失败时拒绝覆盖原文件，提示用户诊断和恢复。
 
 完整产品范围见 [README](../README.md) 与 [project-guide.md](project-guide.md)。

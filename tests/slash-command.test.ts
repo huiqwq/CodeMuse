@@ -11,7 +11,37 @@ test("解析已知命令时忽略大小写和空格", () => {
 });
 
 test("解析规划、上下文、扫描、撤销和会话命令", () => {
-  assert.deepEqual(parseSlashCommand("/PLAN"), { name: "plan" });
+  assert.deepEqual(parseSlashCommand("/PLAN"), {
+    name: "plan",
+    action: "status",
+  });
+  assert.deepEqual(parseSlashCommand("/plan on"), {
+    name: "plan",
+    action: "on",
+  });
+  assert.deepEqual(parseSlashCommand("/plan revise 缩小修改范围"), {
+    name: "plan",
+    action: "revise",
+    value: "缩小修改范围",
+  });
+  assert.deepEqual(parseSlashCommand("/goal create 修复登录"), {
+    name: "goal",
+    action: "create",
+    value: "修复登录",
+  });
+  assert.deepEqual(parseSlashCommand("/memory add 使用严格模式"), {
+    name: "memory",
+    action: "add",
+    value: "使用严格模式",
+  });
+  assert.deepEqual(parseSlashCommand("/approval plan-scoped"), {
+    name: "approval",
+    mode: "plan-scoped",
+  });
+  assert.deepEqual(parseSlashCommand("/doctor export"), {
+    name: "doctor",
+    action: "export",
+  });
   assert.deepEqual(parseSlashCommand("/context"), { name: "context" });
   assert.deepEqual(parseSlashCommand("/scan"), { name: "scan" });
   assert.deepEqual(parseSlashCommand("/undo"), { name: "undo" });

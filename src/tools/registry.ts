@@ -2,6 +2,7 @@ import {
   ChangeJournal,
   type ChangeSummary,
 } from "../changes/change-journal.ts";
+import { createHash } from "node:crypto";
 import type {
   ApprovalHandler,
   ToolCall,
@@ -31,7 +32,7 @@ export type GitStatusReader = (
 export class ToolRegistry {
   private readonly tools = new Map<string, AgentTool>();
   private readonly changes = new ChangeJournal();
-  private readonly observedFiles = new Set<string>();
+  private readonly observedFiles = new Map<string, string>();
   private scriptsListed = false;
   private gitBaseline: GitStatusSnapshot | null = null;
   private readonly gitStatusReader: GitStatusReader;
@@ -103,6 +104,19 @@ export class ToolRegistry {
     }
 
     const input = tool.validate(rawInput);
+    if (tool.risk === "write" && runtime.executionScope) {
+      const requestedPaths = extractWritePaths(call.name, input);
+      if (
+        requestedPaths.length === 0 ||
+        requestedPaths.some((path) => !isPathInScope(path, runtime.executionScope!))
+      ) {
+        throw new Error(
+          `工具 ${call.name} 请求了计划范围外的写入：${
+            requestedPaths.join("、") || "无法识别路径"
+          }`,
+        );
+      }
+    }
     if (tool.risk === "write") {
       await this.ensureGitBaseline(workspace, signal);
     }
@@ -112,6 +126,8 @@ export class ToolRegistry {
       changes: this.changes,
       requestApproval: runtime.requestApproval ?? denyApproval,
       hasObservedFile: (path) => this.observedFiles.has(path),
+      getObservedFileFingerprint: (path) =>
+        this.observedFiles.get(path) ?? null,
       hasListedScripts: () => this.scriptsListed,
       getGitBaseline: () => this.ensureGitBaseline(workspace, signal),
       getAgentChangeSummary: () => this.changes.activeSummary(),
@@ -124,7 +140,15 @@ export class ToolRegistry {
       "path" in value &&
       typeof value.path === "string"
     ) {
-      this.observedFiles.add(value.path);
+      const fingerprint = "fingerprint" in value &&
+          typeof value.fingerprint === "string"
+        ? value.fingerprint
+        : createHash("sha256").update(
+          "content" in value && typeof value.content === "string"
+            ? value.content
+            : "",
+        ).digest("hex");
+      this.observedFiles.set(value.path, fingerprint);
     }
     if (call.name === "list_scripts") this.scriptsListed = true;
 
@@ -149,6 +173,46 @@ export class ToolRegistry {
     }
     return this.gitBaseline;
   }
+}
+
+function extractWritePaths(name: string, input: unknown): string[] {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return [];
+  const value = input as Record<string, unknown>;
+  switch (name) {
+    case "rename_file":
+      return [value.fromPath, value.toPath].filter(
+        (path): path is string => typeof path === "string",
+      );
+    case "apply_patch":
+    case "create_file":
+    case "delete_file":
+      return typeof value.path === "string" ? [value.path] : [];
+    case "apply_patch_set":
+      return Array.isArray(value.patches)
+        ? value.patches.flatMap((patch) =>
+          patch &&
+            typeof patch === "object" &&
+            !Array.isArray(patch) &&
+            "path" in patch &&
+            typeof patch.path === "string"
+            ? [patch.path]
+            : []
+        )
+        : [];
+    default:
+      return [];
+  }
+}
+
+function isPathInScope(path: string, scope: readonly string[]): boolean {
+  const normalized = path.replaceAll("\\", "/");
+  return scope.some((entry) => {
+    const allowed = entry.replaceAll("\\", "/");
+    if (allowed.endsWith("/**")) {
+      return normalized.startsWith(allowed.slice(0, -2));
+    }
+    return normalized === allowed;
+  });
 }
 
 export function expectObject(value: unknown, toolName: string): Record<string, unknown> {

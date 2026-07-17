@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createUnifiedDiff } from "../../changes/diff.ts";
 import { writeTextAtomically } from "../../changes/atomic-write.ts";
@@ -90,6 +91,16 @@ export class ApplyPatchTool implements AgentTool<ApplyPatchInput, ApplyPatchOutp
 
     const buffer = await readFile(target.absolutePath);
     if (containsBinaryBytes(buffer)) throw new Error("文件包含二进制内容");
+    const observedFingerprint = context.getObservedFileFingerprint(
+      target.relativePath,
+    );
+    const currentFingerprint = createHash("sha256").update(buffer).digest("hex");
+    if (
+      observedFingerprint &&
+      observedFingerprint !== currentFingerprint
+    ) {
+      throw new Error("文件在读取后发生变化，必须重新 read_file 后再提交补丁");
+    }
     const original = decodeUtf8(buffer);
     const eol = original.includes("\r\n") ? "\r\n" : "\n";
     const oldText = normalizeNewlines(input.oldText, eol);

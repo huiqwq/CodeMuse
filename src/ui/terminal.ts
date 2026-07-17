@@ -2,9 +2,13 @@ import type {
   AgentEvent,
   ApprovalRequest,
   ContextSummary,
+  GoalRecord,
+  PlanArtifact,
+  ProjectMemory,
   ProjectScan,
   TaskPlan,
 } from "../types.ts";
+import type { DoctorCheck } from "../diagnostics/doctor.ts";
 import { color } from "./colors.ts";
 import type {
   SessionHistoryItem,
@@ -21,12 +25,113 @@ export function printHeader(workspace: string, model: string, mode: string): voi
   const rule = "─".repeat(Math.max(36, width));
 
   console.log();
-  console.log(color.bold(color.brand("  CodeMuse  v0.10.0")));
+  console.log(color.bold(color.brand("  CodeMuse  v1.0.0")));
   console.log(`  ${color.muted("Workspace")}  ${sanitizeTerminalText(workspace)}`);
   console.log(`  ${color.muted("Model")}      ${sanitizeTerminalText(model)}`);
   console.log(`  ${color.muted("Mode")}       ${sanitizeTerminalText(mode)}`);
   console.log(color.muted(rule));
   console.log(color.muted("  输入代码分析或修改任务，输入 /help 查看命令。"));
+  console.log();
+}
+
+export function printPlanArtifact(plan: PlanArtifact | null): void {
+  if (!plan) {
+    console.log(color.muted("当前工作区还没有结构化计划。"));
+    return;
+  }
+  console.log(color.bold(
+    `\n结构化计划 ${plan.id.slice(0, 8)} · r${plan.revision} · ${plan.status}`,
+  ));
+  console.log(`  目标  ${sanitizeTerminalText(plan.objective)}`);
+  console.log(`  范围  ${plan.scope.length ? plan.scope.map(sanitizeTerminalText).join("、") : "尚未识别"}`);
+  for (const step of plan.steps) {
+    console.log(
+      `  ${statusSymbol(step.status)} ${sanitizeTerminalText(step.title)}`,
+    );
+  }
+  if (plan.validation.length) {
+    console.log(`  验证  ${sanitizeTerminalText(plan.validation.join("；"))}`);
+  }
+  if (plan.revisionNotes.length) {
+    console.log(`  修订  ${sanitizeTerminalText(plan.revisionNotes.at(-1) ?? "")}`);
+  }
+  console.log();
+}
+
+export function printGoal(goal: GoalRecord | null): void {
+  if (!goal) {
+    console.log(color.muted("当前工作区没有活动目标。"));
+    return;
+  }
+  console.log(color.bold(
+    `\nGoal ${goal.id.slice(0, 8)} · ${goal.status}`,
+  ));
+  console.log(`  目标    ${sanitizeTerminalText(goal.objective)}`);
+  console.log(
+    `  预算    ${goal.budget.usedTokens}/${goal.budget.maxTokens} Tokens · ` +
+      `${goal.budget.usedRuns}/${goal.budget.maxRuns} 次运行 · ` +
+      `${Math.round(goal.budget.usedRuntimeMs / 1000)}s/${
+        Math.round(goal.budget.maxRuntimeMs / 1000)
+      }s`,
+  );
+  for (const task of goal.tasks) {
+    console.log(`  ${goalTaskSymbol(task.status)} ${sanitizeTerminalText(task.title)}`);
+  }
+  console.log();
+}
+
+export function printGoalHistory(goals: GoalRecord[]): void {
+  console.log(color.bold("\nGoal 历史"));
+  if (!goals.length) {
+    console.log(color.muted("  当前工作区还没有 Goal。"));
+    return;
+  }
+  for (const goal of goals.slice(0, 10)) {
+    console.log(
+      `  ${color.brand(goal.id.slice(0, 8))}  ${sanitizeTerminalText(goal.status)}  ${sanitizeTerminalText(goal.objective)}`,
+    );
+  }
+  console.log();
+}
+
+export function printMemories(memories: ProjectMemory[]): void {
+  console.log(color.bold("\n项目记忆"));
+  if (!memories.length) {
+    console.log(color.muted("  当前工作区还没有长期记忆。"));
+    return;
+  }
+  for (const memory of memories) {
+    console.log(
+      `  ${color.brand(memory.id.slice(0, 8))}  ${sanitizeTerminalText(memory.kind)}` +
+        (memory.stale ? color.warning("  stale") : ""),
+    );
+    console.log(`    ${sanitizeTerminalText(memory.content)}`);
+  }
+  console.log();
+}
+
+export function printMemory(memory: ProjectMemory): void {
+  console.log(color.bold(`\n项目记忆 ${memory.id.slice(0, 8)}`));
+  console.log(`  类型    ${sanitizeTerminalText(memory.kind)}`);
+  console.log(`  状态    ${memory.stale ? color.warning("stale") : color.success("有效")}`);
+  console.log(`  内容    ${sanitizeTerminalText(memory.content)}`);
+  console.log(`  来源    ${sanitizeTerminalText(memory.sources.map((source) => source.reference).join("、"))}`);
+  console.log(`  关联    ${sanitizeTerminalText(memory.relatedPaths.join("、") || "无")}`);
+  console.log();
+}
+
+export function printDoctor(checks: DoctorCheck[]): void {
+  console.log(color.bold("\nCodeMuse Doctor"));
+  for (const check of checks) {
+    const symbol = check.status === "pass"
+      ? color.success("✓")
+      : check.status === "warn"
+      ? color.warning("!")
+      : color.error("×");
+    console.log(
+      `  ${symbol} ${sanitizeTerminalText(check.name)}  ${sanitizeTerminalText(check.message)}`,
+    );
+  }
   console.log();
 }
 
@@ -280,6 +385,21 @@ function formatSessionTime(value: string): string {
     : value;
 }
 function statusSymbol(status: TaskPlan["steps"][number]["status"]): string {
+  switch (status) {
+    case "pending":
+      return color.muted("○");
+    case "running":
+      return color.brand("●");
+    case "completed":
+      return color.success("✓");
+    case "failed":
+      return color.error("×");
+    case "cancelled":
+      return color.warning("-");
+  }
+}
+
+function goalTaskSymbol(status: GoalRecord["tasks"][number]["status"]): string {
   switch (status) {
     case "pending":
       return color.muted("○");

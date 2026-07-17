@@ -18,6 +18,7 @@ export type ToolContext = {
   changes: ChangeJournal;
   requestApproval: ApprovalHandler;
   hasObservedFile: (path: string) => boolean;
+  getObservedFileFingerprint: (path: string) => string | null;
   hasListedScripts: () => boolean;
   getGitBaseline: () => Promise<GitStatusSnapshot>;
   getAgentChangeSummary: () => ChangeSummary;
@@ -26,6 +27,7 @@ export type ToolContext = {
 export type ToolRuntimeOptions = {
   requestApproval?: ApprovalHandler;
   allowedRisks?: readonly ToolRisk[];
+  executionScope?: readonly string[];
 };
 
 export type ToolExecutionResult = {
